@@ -3,6 +3,8 @@
 
 #include <nan.h>
 
+#include <yara.h>
+
 using namespace v8;
 
 namespace yara {

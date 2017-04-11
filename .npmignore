@@ -1,4 +1,5 @@
 build
-.hgignore
-.hgtags
+deps/file-5.30
+deps/yara-3.5.0
+deps/zlib-1.2.11
 node_modules

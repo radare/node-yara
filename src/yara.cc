@@ -59,7 +59,7 @@ NAN_METHOD(ScannerWrap::New) {
 	Nan::HandleScope scope;
 	
 	ScannerWrap* scanner = new ScannerWrap();
-	
+
 	scanner->Wrap(info.This());
 
 	info.GetReturnValue().Set(info.This());
