@@ -150,8 +150,17 @@ public:
 
 		if (scanner_->compiler) {
 			rc = yr_compiler_add_string(scanner_->compiler, rules_.c_str(), NULL);
-			if (rc > 0)
+			if (rc > 0) {
 				SetErrorMessage("yr_compiler_add_string() failed: TODO more information");
+			} else {
+				if (scanner_->rules) {
+					yr_rules_destroy(scanner_->rules);
+					scanner_->rules = NULL;
+				}
+				rc = yr_compiler_get_rules(scanner_->compiler, &scanner_->rules);
+				if (rc != ERROR_SUCCESS)
+					SetErrorMessage("yr_compiler_get_rules() failed: ERROR_INSUFICENT_MEMORY");
+			}
 		}
 
 		// TODO: Set a compiler callback and record errors

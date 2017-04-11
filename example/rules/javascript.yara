@@ -1,6 +1,6 @@
 
 rule javascript {
-	conditions:
+	condition:
 		"function"
 }
 
