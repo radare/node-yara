@@ -15,6 +15,10 @@ function Scanner(options) {
 	this.yara = new yara.ScannerWrap()
 }
 
+Scanner.prototype.addRules = function(rules, cb) {
+	return this.yara.addRules(rules, cb)
+}
+
 exports.ErrorCode = yara.ErrorCode
 
 exports.Scanner = Scanner

@@ -1,0 +1,6 @@
+
+rule javascript {
+	conditions:
+		"function"
+}
+
