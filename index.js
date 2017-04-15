@@ -19,10 +19,12 @@ Scanner.prototype.addRules = function(rules, cb) {
 	return this.yara.addRules(rules, cb)
 }
 
-exports.ErrorCode = yara.ErrorCode
-
 exports.Scanner = Scanner
 
 exports.createScanner = function(options) {
 	return new Scanner(options || {})
+}
+
+exports.initialize = function(cb) {
+	return yara.initialize(cb)
 }

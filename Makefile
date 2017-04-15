@@ -30,4 +30,3 @@ yara:
 	cd $(BASE)/deps/yara-$(YARA) && ./configure --enable-static --disable-shared --with-pic --enable-magic --prefix=$(BASE)/deps/yara-$(YARA)/build "CFLAGS=-I$(BASE)/deps/file-$(FILE)/build/include -I$(BASE)/deps/zlib-$(ZLIB)/build/include" "LDFLAGS=-L$(BASE)/deps/file-$(FILE)/build/lib -L$(BASE)/deps/zlib-$(ZLIB)/build/lib"
 	cd $(BASE)/deps/yara-$(YARA) && make
 	cd $(BASE)/deps/yara-$(YARA) && make install
-

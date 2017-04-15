@@ -12,6 +12,9 @@ using namespace v8;
 namespace yara {
 
 void ExportConstants(Handle<Object> target);
+void ExportFunctions(Handle<Object> target);
+
+NAN_METHOD(Initialize);
 
 class ScannerWrap : public Nan::ObjectWrap {
 public:
@@ -29,6 +32,7 @@ private:
 	~ScannerWrap();
 
 	static NAN_METHOD(New);
+	static NAN_METHOD(ErrorCodeToString);
 	static NAN_METHOD(AddRules);
 
 	pthread_rwlock_t lock;

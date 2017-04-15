@@ -1,6 +1,8 @@
 #ifndef YARA_CC
 #define YARA_CC
 
+#include <map>
+
 #include <stdio.h>
 #include <string.h>
 #include "yara.h"
@@ -13,74 +15,128 @@ namespace yara {
 
 static Nan::Persistent<FunctionTemplate> ScannerWrap_constructor;
 
-void InitAll(Handle<Object> exports) {
-	/**
-	 ** Not really much we can do with a failure here.  Perhaps we would be
-	 ** better off doing this on-demand by the first scanner object attempting
-	 ** to use YARA.
-	 **/
-	yr_initialize();
+std::map<int, const char*> error_codes;
 
-	ExportConstants(exports);
+#define MAP_ERROR_CODE(name, code) error_codes[code] = name
+
+#define ERROR_UNKNOWN_STRING "ERROR_UNKNOWN"
+
+const char* getErrorString(int code) {
+	size_t count = error_codes.count(code);
+	if (count > 0)
+		return error_codes[code];
+	else
+		return ERROR_UNKNOWN_STRING;
+}
+
+void InitAll(Handle<Object> exports) {
+   MAP_ERROR_CODE("ERROR_SUCCESS", ERROR_SUCCESS);
+   MAP_ERROR_CODE("ERROR_INSUFICIENT_MEMORY", ERROR_INSUFICIENT_MEMORY);
+   MAP_ERROR_CODE("ERROR_COULD_NOT_ATTACH_TO_PROCESS", ERROR_COULD_NOT_ATTACH_TO_PROCESS);
+   MAP_ERROR_CODE("ERROR_COULD_NOT_OPEN_FILE", ERROR_COULD_NOT_OPEN_FILE);
+   MAP_ERROR_CODE("ERROR_COULD_NOT_MAP_FILE", ERROR_COULD_NOT_MAP_FILE);
+   MAP_ERROR_CODE("ERROR_INVALID_FILE", ERROR_INVALID_FILE);
+   MAP_ERROR_CODE("ERROR_CORRUPT_FILE", ERROR_CORRUPT_FILE);
+   MAP_ERROR_CODE("ERROR_UNSUPPORTED_FILE_VERSION", ERROR_UNSUPPORTED_FILE_VERSION);
+   MAP_ERROR_CODE("ERROR_INVALID_REGULAR_EXPRESSION", ERROR_INVALID_REGULAR_EXPRESSION);
+   MAP_ERROR_CODE("ERROR_INVALID_HEX_STRING", ERROR_INVALID_HEX_STRING);
+   MAP_ERROR_CODE("ERROR_SYNTAX_ERROR", ERROR_SYNTAX_ERROR);
+   MAP_ERROR_CODE("ERROR_LOOP_NESTING_LIMIT_EXCEEDED", ERROR_LOOP_NESTING_LIMIT_EXCEEDED);
+   MAP_ERROR_CODE("ERROR_DUPLICATED_LOOP_IDENTIFIER", ERROR_DUPLICATED_LOOP_IDENTIFIER);
+   MAP_ERROR_CODE("ERROR_DUPLICATED_IDENTIFIER", ERROR_DUPLICATED_IDENTIFIER);
+   MAP_ERROR_CODE("ERROR_DUPLICATED_TAG_IDENTIFIER", ERROR_DUPLICATED_TAG_IDENTIFIER);
+   MAP_ERROR_CODE("ERROR_DUPLICATED_META_IDENTIFIER", ERROR_DUPLICATED_META_IDENTIFIER);
+   MAP_ERROR_CODE("ERROR_DUPLICATED_STRING_IDENTIFIER", ERROR_DUPLICATED_STRING_IDENTIFIER);
+   MAP_ERROR_CODE("ERROR_UNREFERENCED_STRING", ERROR_UNREFERENCED_STRING);
+   MAP_ERROR_CODE("ERROR_UNDEFINED_STRING", ERROR_UNDEFINED_STRING);
+   MAP_ERROR_CODE("ERROR_UNDEFINED_IDENTIFIER", ERROR_UNDEFINED_IDENTIFIER);
+   MAP_ERROR_CODE("ERROR_MISPLACED_ANONYMOUS_STRING", ERROR_MISPLACED_ANONYMOUS_STRING);
+   MAP_ERROR_CODE("ERROR_INCLUDES_CIRCULAR_REFERENCE", ERROR_INCLUDES_CIRCULAR_REFERENCE);
+   MAP_ERROR_CODE("ERROR_INCLUDE_DEPTH_EXCEEDED", ERROR_INCLUDE_DEPTH_EXCEEDED);
+   MAP_ERROR_CODE("ERROR_WRONG_TYPE", ERROR_WRONG_TYPE);
+   MAP_ERROR_CODE("ERROR_EXEC_STACK_OVERFLOW", ERROR_EXEC_STACK_OVERFLOW);
+   MAP_ERROR_CODE("ERROR_SCAN_TIMEOUT", ERROR_SCAN_TIMEOUT);
+   MAP_ERROR_CODE("ERROR_TOO_MANY_SCAN_THREADS", ERROR_TOO_MANY_SCAN_THREADS);
+   MAP_ERROR_CODE("ERROR_CALLBACK_ERROR", ERROR_CALLBACK_ERROR);
+   MAP_ERROR_CODE("ERROR_INVALID_ARGUMENT", ERROR_INVALID_ARGUMENT);
+   MAP_ERROR_CODE("ERROR_TOO_MANY_MATCHES", ERROR_TOO_MANY_MATCHES);
+   MAP_ERROR_CODE("ERROR_INTERNAL_FATAL_ERROR", ERROR_INTERNAL_FATAL_ERROR);
+   MAP_ERROR_CODE("ERROR_NESTED_FOR_OF_LOOP", ERROR_NESTED_FOR_OF_LOOP);
+   MAP_ERROR_CODE("ERROR_INVALID_FIELD_NAME", ERROR_INVALID_FIELD_NAME);
+   MAP_ERROR_CODE("ERROR_UNKNOWN_MODULE", ERROR_UNKNOWN_MODULE);
+   MAP_ERROR_CODE("ERROR_NOT_A_STRUCTURE", ERROR_NOT_A_STRUCTURE);
+   MAP_ERROR_CODE("ERROR_NOT_INDEXABLE", ERROR_NOT_INDEXABLE);
+   MAP_ERROR_CODE("ERROR_NOT_A_FUNCTION", ERROR_NOT_A_FUNCTION);
+   MAP_ERROR_CODE("ERROR_INVALID_FORMAT", ERROR_INVALID_FORMAT);
+   MAP_ERROR_CODE("ERROR_TOO_MANY_ARGUMENTS", ERROR_TOO_MANY_ARGUMENTS);
+   MAP_ERROR_CODE("ERROR_WRONG_ARGUMENTS", ERROR_WRONG_ARGUMENTS);
+   MAP_ERROR_CODE("ERROR_WRONG_RETURN_TYPE", ERROR_WRONG_RETURN_TYPE);
+   MAP_ERROR_CODE("ERROR_DUPLICATED_STRUCTURE_MEMBER", ERROR_DUPLICATED_STRUCTURE_MEMBER);
+   MAP_ERROR_CODE("ERROR_EMPTY_STRING", ERROR_EMPTY_STRING);
+   MAP_ERROR_CODE("ERROR_DIVISION_BY_ZERO", ERROR_DIVISION_BY_ZERO);
+   MAP_ERROR_CODE("ERROR_REGULAR_EXPRESSION_TOO_LARGE", ERROR_REGULAR_EXPRESSION_TOO_LARGE);
+   MAP_ERROR_CODE("ERROR_TOO_MANY_RE_FIBERS", ERROR_TOO_MANY_RE_FIBERS);
+   MAP_ERROR_CODE("ERROR_COULD_NOT_READ_PROCESS_MEMORY", ERROR_COULD_NOT_READ_PROCESS_MEMORY);
+   MAP_ERROR_CODE("ERROR_INVALID_EXTERNAL_VARIABLE_TYPE", ERROR_INVALID_EXTERNAL_VARIABLE_TYPE);
+
+	ExportFunctions (exports);
 
 	ScannerWrap::Init(exports);
 }
 
 NODE_MODULE(yara, InitAll)
 
-void ExportConstants(Handle<Object> target) {
-	Local<Object> error_code = Nan::New<Object>();
+void ExportFunctions(Handle<Object> target) {
+	Nan::Set(target, Nan::New("initialize").ToLocalChecked(),
+			Nan::New<FunctionTemplate>(Initialize)->GetFunction());
+}
 
-	Nan::Set(target, Nan::New("ErrorCode").ToLocalChecked(), error_code);
+class AsyncInitialize : public Nan::AsyncWorker {
+public:
+	AsyncInitialize(
+			Nan::Callback *callback
+		) : Nan::AsyncWorker(callback) {}
+	
+	~AsyncInitialize() {}
 
-	Nan::Set(error_code, Nan::New("ERROR_SUCCESS").ToLocalChecked(), Nan::New<Number>(ERROR_SUCCESS));
-	Nan::Set(error_code, Nan::New("ERROR_INSUFICIENT_MEMORY").ToLocalChecked(), Nan::New<Number>(ERROR_INSUFICIENT_MEMORY));
-	Nan::Set(error_code, Nan::New("ERROR_COULD_NOT_ATTACH_TO_PROCESS").ToLocalChecked(), Nan::New<Number>(ERROR_COULD_NOT_ATTACH_TO_PROCESS));
-	Nan::Set(error_code, Nan::New("ERROR_COULD_NOT_OPEN_FILE").ToLocalChecked(), Nan::New<Number>(ERROR_COULD_NOT_OPEN_FILE));
-	Nan::Set(error_code, Nan::New("ERROR_COULD_NOT_MAP_FILE").ToLocalChecked(), Nan::New<Number>(ERROR_COULD_NOT_MAP_FILE));
-	Nan::Set(error_code, Nan::New("ERROR_INVALID_FILE").ToLocalChecked(), Nan::New<Number>(ERROR_INVALID_FILE));
-	Nan::Set(error_code, Nan::New("ERROR_CORRUPT_FILE").ToLocalChecked(), Nan::New<Number>(ERROR_CORRUPT_FILE));
-	Nan::Set(error_code, Nan::New("ERROR_UNSUPPORTED_FILE_VERSION").ToLocalChecked(), Nan::New<Number>(ERROR_UNSUPPORTED_FILE_VERSION));
-	Nan::Set(error_code, Nan::New("ERROR_INVALID_REGULAR_EXPRESSION").ToLocalChecked(), Nan::New<Number>(ERROR_INVALID_REGULAR_EXPRESSION));
-	Nan::Set(error_code, Nan::New("ERROR_INVALID_HEX_STRING").ToLocalChecked(), Nan::New<Number>(ERROR_INVALID_HEX_STRING));
-	Nan::Set(error_code, Nan::New("ERROR_SYNTAX_ERROR").ToLocalChecked(), Nan::New<Number>(ERROR_SYNTAX_ERROR));
-	Nan::Set(error_code, Nan::New("ERROR_LOOP_NESTING_LIMIT_EXCEEDED").ToLocalChecked(), Nan::New<Number>(ERROR_LOOP_NESTING_LIMIT_EXCEEDED));
-	Nan::Set(error_code, Nan::New("ERROR_DUPLICATED_LOOP_IDENTIFIER").ToLocalChecked(), Nan::New<Number>(ERROR_DUPLICATED_LOOP_IDENTIFIER));
-	Nan::Set(error_code, Nan::New("ERROR_DUPLICATED_IDENTIFIER").ToLocalChecked(), Nan::New<Number>(ERROR_DUPLICATED_IDENTIFIER));
-	Nan::Set(error_code, Nan::New("ERROR_DUPLICATED_TAG_IDENTIFIER").ToLocalChecked(), Nan::New<Number>(ERROR_DUPLICATED_TAG_IDENTIFIER));
-	Nan::Set(error_code, Nan::New("ERROR_DUPLICATED_META_IDENTIFIER").ToLocalChecked(), Nan::New<Number>(ERROR_DUPLICATED_META_IDENTIFIER));
-	Nan::Set(error_code, Nan::New("ERROR_DUPLICATED_STRING_IDENTIFIER").ToLocalChecked(), Nan::New<Number>(ERROR_DUPLICATED_STRING_IDENTIFIER));
-	Nan::Set(error_code, Nan::New("ERROR_UNREFERENCED_STRING").ToLocalChecked(), Nan::New<Number>(ERROR_UNREFERENCED_STRING));
-	Nan::Set(error_code, Nan::New("ERROR_UNDEFINED_STRING").ToLocalChecked(), Nan::New<Number>(ERROR_UNDEFINED_STRING));
-	Nan::Set(error_code, Nan::New("ERROR_UNDEFINED_IDENTIFIER").ToLocalChecked(), Nan::New<Number>(ERROR_UNDEFINED_IDENTIFIER));
-	Nan::Set(error_code, Nan::New("ERROR_MISPLACED_ANONYMOUS_STRING").ToLocalChecked(), Nan::New<Number>(ERROR_MISPLACED_ANONYMOUS_STRING));
-	Nan::Set(error_code, Nan::New("ERROR_INCLUDES_CIRCULAR_REFERENCE").ToLocalChecked(), Nan::New<Number>(ERROR_INCLUDES_CIRCULAR_REFERENCE));
-	Nan::Set(error_code, Nan::New("ERROR_INCLUDE_DEPTH_EXCEEDED").ToLocalChecked(), Nan::New<Number>(ERROR_INCLUDE_DEPTH_EXCEEDED));
-	Nan::Set(error_code, Nan::New("ERROR_WRONG_TYPE").ToLocalChecked(), Nan::New<Number>(ERROR_WRONG_TYPE));
-	Nan::Set(error_code, Nan::New("ERROR_EXEC_STACK_OVERFLOW").ToLocalChecked(), Nan::New<Number>(ERROR_EXEC_STACK_OVERFLOW));
-	Nan::Set(error_code, Nan::New("ERROR_SCAN_TIMEOUT").ToLocalChecked(), Nan::New<Number>(ERROR_SCAN_TIMEOUT));
-	Nan::Set(error_code, Nan::New("ERROR_TOO_MANY_SCAN_THREADS").ToLocalChecked(), Nan::New<Number>(ERROR_TOO_MANY_SCAN_THREADS));
-	Nan::Set(error_code, Nan::New("ERROR_CALLBACK_ERROR").ToLocalChecked(), Nan::New<Number>(ERROR_CALLBACK_ERROR));
-	Nan::Set(error_code, Nan::New("ERROR_INVALID_ARGUMENT").ToLocalChecked(), Nan::New<Number>(ERROR_INVALID_ARGUMENT));
-	Nan::Set(error_code, Nan::New("ERROR_TOO_MANY_MATCHES").ToLocalChecked(), Nan::New<Number>(ERROR_TOO_MANY_MATCHES));
-	Nan::Set(error_code, Nan::New("ERROR_INTERNAL_FATAL_ERROR").ToLocalChecked(), Nan::New<Number>(ERROR_INTERNAL_FATAL_ERROR));
-	Nan::Set(error_code, Nan::New("ERROR_NESTED_FOR_OF_LOOP").ToLocalChecked(), Nan::New<Number>(ERROR_NESTED_FOR_OF_LOOP));
-	Nan::Set(error_code, Nan::New("ERROR_INVALID_FIELD_NAME").ToLocalChecked(), Nan::New<Number>(ERROR_INVALID_FIELD_NAME));
-	Nan::Set(error_code, Nan::New("ERROR_UNKNOWN_MODULE").ToLocalChecked(), Nan::New<Number>(ERROR_UNKNOWN_MODULE));
-	Nan::Set(error_code, Nan::New("ERROR_NOT_A_STRUCTURE").ToLocalChecked(), Nan::New<Number>(ERROR_NOT_A_STRUCTURE));
-	Nan::Set(error_code, Nan::New("ERROR_NOT_INDEXABLE").ToLocalChecked(), Nan::New<Number>(ERROR_NOT_INDEXABLE));
-	Nan::Set(error_code, Nan::New("ERROR_NOT_A_FUNCTION").ToLocalChecked(), Nan::New<Number>(ERROR_NOT_A_FUNCTION));
-	Nan::Set(error_code, Nan::New("ERROR_INVALID_FORMAT").ToLocalChecked(), Nan::New<Number>(ERROR_INVALID_FORMAT));
-	Nan::Set(error_code, Nan::New("ERROR_TOO_MANY_ARGUMENTS").ToLocalChecked(), Nan::New<Number>(ERROR_TOO_MANY_ARGUMENTS));
-	Nan::Set(error_code, Nan::New("ERROR_WRONG_ARGUMENTS").ToLocalChecked(), Nan::New<Number>(ERROR_WRONG_ARGUMENTS));
-	Nan::Set(error_code, Nan::New("ERROR_WRONG_RETURN_TYPE").ToLocalChecked(), Nan::New<Number>(ERROR_WRONG_RETURN_TYPE));
-	Nan::Set(error_code, Nan::New("ERROR_DUPLICATED_STRUCTURE_MEMBER").ToLocalChecked(), Nan::New<Number>(ERROR_DUPLICATED_STRUCTURE_MEMBER));
-	Nan::Set(error_code, Nan::New("ERROR_EMPTY_STRING").ToLocalChecked(), Nan::New<Number>(ERROR_EMPTY_STRING));
-	Nan::Set(error_code, Nan::New("ERROR_DIVISION_BY_ZERO").ToLocalChecked(), Nan::New<Number>(ERROR_DIVISION_BY_ZERO));
-	Nan::Set(error_code, Nan::New("ERROR_REGULAR_EXPRESSION_TOO_LARGE").ToLocalChecked(), Nan::New<Number>(ERROR_REGULAR_EXPRESSION_TOO_LARGE));
-	Nan::Set(error_code, Nan::New("ERROR_TOO_MANY_RE_FIBERS").ToLocalChecked(), Nan::New<Number>(ERROR_TOO_MANY_RE_FIBERS));
-	Nan::Set(error_code, Nan::New("ERROR_COULD_NOT_READ_PROCESS_MEMORY").ToLocalChecked(), Nan::New<Number>(ERROR_COULD_NOT_READ_PROCESS_MEMORY));
-	Nan::Set(error_code, Nan::New("ERROR_INVALID_EXTERNAL_VARIABLE_TYPE").ToLocalChecked(), Nan::New<Number>(ERROR_INVALID_EXTERNAL_VARIABLE_TYPE));
+	void Execute() {
+		int rc = yr_initialize();
+		if (rc != ERROR_SUCCESS) {
+			std::string errorstr = std::string("yr_initialize() failed: ") + getErrorString(rc);
+			SetErrorMessage(errorstr.c_str());
+		}
+	}
+
+protected:
+	void HandleOKCallback() {
+		Local<Value> argv[1];
+
+		argv[0] = Nan::Null();
+		
+		callback->Call(1, argv);
+	}
+};
+
+NAN_METHOD(Initialize) {
+	Nan::HandleScope scope;
+
+	if (info.Length() < 1) {
+		Nan::ThrowError("One argument is required");
+		return;
+	}
+
+	if (! info[0]->IsFunction()) {
+		Nan::ThrowError("Callback argument must be a function");
+		return;
+	}
+
+	Nan::Callback* callback = new Nan::Callback(info[0].As<Function>());
+
+	AsyncInitialize* async_initialize = new AsyncInitialize(callback);
+
+	Nan::AsyncQueueWorker(async_initialize);
+
+	info.GetReturnValue().Set(info.This());
 }
 
 void ScannerWrap::Init(Handle<Object> exports) {
@@ -125,6 +181,16 @@ void ScannerWrap::lock_write(void) {
 
 void ScannerWrap::unlock(void) {
 	pthread_rwlock_unlock(&lock);
+}
+
+NAN_METHOD(ScannerWrap::New) {
+	Nan::HandleScope scope;
+	
+	ScannerWrap* scanner = new ScannerWrap();
+
+	scanner->Wrap(info.This());
+
+	info.GetReturnValue().Set(info.This());
 }
 
 class AsyncAddRules : public Nan::AsyncWorker {
@@ -217,14 +283,22 @@ NAN_METHOD(ScannerWrap::AddRules) {
 	info.GetReturnValue().Set(info.This());
 }
 
-NAN_METHOD(ScannerWrap::New) {
+NAN_METHOD(ScannerWrap::ErrorCodeToString) {
 	Nan::HandleScope scope;
-	
-	ScannerWrap* scanner = new ScannerWrap();
 
-	scanner->Wrap(info.This());
+	if (info.Length() < 1) {
+		Nan::ThrowError("One argument is required");
+		return;
+	}
 
-	info.GetReturnValue().Set(info.This());
+	if (! info[0]->IsInt32()) {
+		Nan::ThrowError("Code argument must be a int32");
+		return;
+	}
+
+	int code = Nan::To<v8::Int32>(info[0]).ToLocalChecked()->Value();
+
+	info.GetReturnValue().Set(Nan::New<String>(getErrorString(code)).ToLocalChecked());
 }
 
 }; /* namespace yara */
