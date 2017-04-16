@@ -14,6 +14,7 @@ namespace yara {
 void ExportConstants(Handle<Object> target);
 void ExportFunctions(Handle<Object> target);
 
+NAN_METHOD(ErrorCodeToString);
 NAN_METHOD(Initialize);
 
 class ScannerWrap : public Nan::ObjectWrap {
@@ -32,8 +33,7 @@ private:
 	~ScannerWrap();
 
 	static NAN_METHOD(New);
-	static NAN_METHOD(ErrorCodeToString);
-	static NAN_METHOD(AddRules);
+	static NAN_METHOD(Configure);
 
 	pthread_rwlock_t lock;
 };

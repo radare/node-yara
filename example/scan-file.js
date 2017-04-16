@@ -1,5 +1,4 @@
 
-var fs = require("fs")
 var yara = require ("../")
 
 if (process.argv.length < 4) {
@@ -12,17 +11,22 @@ var objectFile = process.argv[3]
 
 var scanner = yara.createScanner()
 
-fs.readFile(rulesFile, function(error, data) {
+var options = {
+	rules: [
+		{file: rulesFile}
+	]
+}
+
+yara.initialize(function(error) {
 	if (error) {
 		console.error(error)
 	} else {
-		scanner.addRules(data.toString("ascii"), function(error) {
+		scanner.configure(options, function(error) {
 			if (error) {
 				console.error(error)
 			} else {
-				console.log("Rules loaded")
+				console.log("Scanner configured")
 			}
 		})
 	}
 })
-

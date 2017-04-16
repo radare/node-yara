@@ -5,6 +5,10 @@
       'sources': [
         'src/yara.cc'
       ],
+		'cflags_cc!': [
+		  '-fno-exceptions',
+		  '-fno-rtti'
+		],
       "include_dirs" : [
         "<!(node -e \"require('nan')\")",
 		  './deps/zlib-1.2.11/build/include',

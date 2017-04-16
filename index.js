@@ -19,6 +19,10 @@ Scanner.prototype.addRules = function(rules, cb) {
 	return this.yara.addRules(rules, cb)
 }
 
+Scanner.prototype.configure = function(options, cb) {
+	return this.yara.configure(options, cb)
+}
+
 exports.Scanner = Scanner
 
 exports.createScanner = function(options) {

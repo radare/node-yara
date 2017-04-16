@@ -1,8 +1,13 @@
 #ifndef YARA_CC
 #define YARA_CC
 
+#include <list>
 #include <map>
+#include <stdexcept>
+#include <string>
+#include <sstream>
 
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
 #include "yara.h"
@@ -10,6 +15,13 @@
 const char* yara_strerror(int code) {
 	return strerror(code);
 }
+
+#define yara_throw(type, stream) \
+		do { \
+			std::ostringstream oss__; \
+			oss__ << stream; \
+			throw type(oss__.str().c_str()); \
+		} while (1)
 
 namespace yara {
 
@@ -28,6 +40,20 @@ const char* getErrorString(int code) {
 	else
 		return ERROR_UNKNOWN_STRING;
 }
+
+class YaraError : public std::exception {
+public:
+	YaraError(const char* what) : _what(what) {};
+
+	~YaraError() throw() {};
+
+	virtual const char* what() const throw() {
+		return _what.c_str();
+	}
+
+private:
+	std::string _what;
+};
 
 void InitAll(Handle<Object> exports) {
    MAP_ERROR_CODE("ERROR_SUCCESS", ERROR_SUCCESS);
@@ -117,6 +143,24 @@ protected:
 	}
 };
 
+NAN_METHOD(ErrorCodeToString) {
+	Nan::HandleScope scope;
+
+	if (info.Length() < 1) {
+		Nan::ThrowError("One argument is required");
+		return;
+	}
+
+	if (! info[0]->IsInt32()) {
+		Nan::ThrowError("Code argument must be a int32");
+		return;
+	}
+
+	int code = Nan::To<v8::Int32>(info[0]).ToLocalChecked()->Value();
+
+	info.GetReturnValue().Set(Nan::New<String>(getErrorString(code)).ToLocalChecked());
+}
+
 NAN_METHOD(Initialize) {
 	Nan::HandleScope scope;
 
@@ -146,7 +190,7 @@ void ScannerWrap::Init(Handle<Object> exports) {
 	tpl->SetClassName(Nan::New("ScannerWrap").ToLocalChecked());
 	tpl->InstanceTemplate()->SetInternalFieldCount(1);
 
-	Nan::SetPrototypeMethod(tpl, "addRules", AddRules);
+	Nan::SetPrototypeMethod(tpl, "configure", Configure);
 
 	ScannerWrap_constructor.Reset(tpl);
 	exports->Set(Nan::New("ScannerWrap").ToLocalChecked(),
@@ -193,45 +237,118 @@ NAN_METHOD(ScannerWrap::New) {
 	info.GetReturnValue().Set(info.This());
 }
 
-class AsyncAddRules : public Nan::AsyncWorker {
+struct RuleConfig {
+	bool isFile;
+	std::string source;
+	std::string ns;
+};
+
+typedef std::list<RuleConfig*> RuleConfigList;
+
+class AsyncConfigure : public Nan::AsyncWorker {
 public:
-	AsyncAddRules(
+	AsyncConfigure(
 			ScannerWrap* scanner,
-			std::string rules,
-			Nan::Callback *callback
-		) : Nan::AsyncWorker(callback), scanner_(scanner), rules_(rules) {}
+			RuleConfigList* rule_configs,
+			Nan::Callback* callback
+		) : Nan::AsyncWorker(callback),
+				scanner_(scanner),
+				rule_configs_(rule_configs) {}
 	
-	~AsyncAddRules() {}
+	~AsyncConfigure() {
+		if (rule_configs_) {
+			RuleConfig* rule_config;
+			RuleConfigList::iterator rule_configs_it;
+
+			for (rule_configs_it = rule_configs_->begin();
+					rule_configs_it != rule_configs_->end();
+					rule_configs_it++) {
+				rule_config = *rule_configs_it;
+				delete rule_config;
+			}
+
+			rule_configs_->clear();
+			delete rule_configs_;
+			rule_configs_ = NULL;
+		}
+	}
 
 	void Execute() {
 		scanner_->lock_write();
 
-		int rc;
-
-		if (! scanner_->compiler) {
-			rc = yr_compiler_create(&scanner_->compiler);
-			if (rc != ERROR_SUCCESS) 
-				SetErrorMessage("yr_compiler_create() failed: ERROR_INSUFICENT_MEMORY");
-		}
-
-		if (scanner_->compiler) {
-			rc = yr_compiler_add_string(scanner_->compiler, rules_.c_str(), NULL);
-			if (rc > 0) {
-				SetErrorMessage("yr_compiler_add_string() failed: TODO more information");
-			} else {
-				if (scanner_->rules) {
-					yr_rules_destroy(scanner_->rules);
-					scanner_->rules = NULL;
-				}
-				rc = yr_compiler_get_rules(scanner_->compiler, &scanner_->rules);
-				if (rc != ERROR_SUCCESS)
-					SetErrorMessage("yr_compiler_get_rules() failed: ERROR_INSUFICENT_MEMORY");
+		try {
+			if (scanner_->rules) {
+				yr_rules_destroy(scanner_->rules);
+				scanner_->rules = NULL;
 			}
+
+			if (scanner_->compiler) {
+				yr_compiler_destroy(scanner_->compiler);
+				scanner_->compiler = NULL;
+			}
+
+			if (! scanner_->compiler) {
+				int rc = yr_compiler_create(&scanner_->compiler);
+				if (rc != ERROR_SUCCESS) 
+					yara_throw(YaraError, "yr_compiler_create() failed: "
+							<< getErrorString(rc));
+			}
+
+			RuleConfig* rule_config;
+			RuleConfigList::iterator rule_configs_it;
+
+			for (rule_configs_it = rule_configs_->begin();
+					rule_configs_it != rule_configs_->end();
+					rule_configs_it++) {
+				rule_config = *rule_configs_it;
+
+				if (rule_config->isFile) {
+					FILE *fp = fopen(rule_config->source.c_str(), "r");
+					if (! fp)
+						yara_throw(YaraError, "fopen(" << rule_config->source.c_str()
+								<< ") failed: " << yara_strerror(errno));
+
+					int rc = yr_compiler_add_file(
+							scanner_->compiler,
+							fp,
+							rule_config->ns.length()
+									? rule_config->ns.c_str()
+									: NULL,
+							rule_config->source.c_str()
+						);
+
+					fclose(fp);
+					
+					if (rc > 0)
+						yara_throw(YaraError, "yr_compiler_add_file(" <<
+								rule_config->source.c_str() << ") failed: "
+								<< getErrorString(rc));
+				} else {
+					int rc = yr_compiler_add_string(
+							scanner_->compiler,
+							rule_config->source.c_str(),
+							rule_config->ns.length()
+									? rule_config->ns.c_str()
+									: NULL
+						);
+
+					if (rc > 0)
+						yara_throw(YaraError, "yr_compiler_add_string() failed: "
+								<< getErrorString(rc));
+				}
+			}
+
+			// TODO: Set a compiler callback and record errors
+			// TODO: Throw an exception if any found
+			
+			int rc = yr_compiler_get_rules(scanner_->compiler, &scanner_->rules);
+			if (rc != ERROR_SUCCESS)
+				yara_throw(YaraError, "yr_compiler_get_rules() failed: "
+						<< getErrorString(rc));
+		} catch(std::exception& error) {
+			SetErrorMessage(error.what());
 		}
 
-		// TODO: Set a compiler callback and record errors
-		// TODO: Throw an exception if any found
-		
 		scanner_->unlock();
 	}
 
@@ -247,10 +364,10 @@ protected:
 
 private:
 	ScannerWrap* scanner_;
-	std::string rules_;
+	RuleConfigList* rule_configs_;
 };
 
-NAN_METHOD(ScannerWrap::AddRules) {
+NAN_METHOD(ScannerWrap::Configure) {
 	Nan::HandleScope scope;
 	
 	if (info.Length() < 2) {
@@ -258,8 +375,8 @@ NAN_METHOD(ScannerWrap::AddRules) {
 		return;
 	}
 
-	if (! info[0]->IsString()) {
-		Nan::ThrowError("Rules argument must be a string");
+	if (! info[0]->IsObject()) {
+		Nan::ThrowError("Options argument must be an object");
 		return;
 	}
 
@@ -268,37 +385,66 @@ NAN_METHOD(ScannerWrap::AddRules) {
 		return;
 	}
 
+	Local<Object> options = info[0]->ToObject();
+
+	RuleConfigList* rule_configs = new RuleConfigList();
+
+	Local<Array> rules = Local<Array>::Cast(
+			Nan::Get(options, Nan::New("rules").ToLocalChecked()).ToLocalChecked()
+		);
+
+	for (uint32_t i = 0; i < rules->Length(); i++) {
+		if (rules->Get(i)->IsObject()) {
+			Local<Object> rule = rules->Get(i)->ToObject();
+
+			std::string ns;
+			std::string str;
+			std::string file;
+
+			if (rule->Get(Nan::New("namespace").ToLocalChecked())->IsString()) {
+				Local<String> s = rule->Get(Nan::New("namespace").ToLocalChecked())->ToString();
+				ns = *Nan::Utf8String(s);
+			}
+
+			if (rule->Get(Nan::New("string").ToLocalChecked())->IsString()) {
+				Local<String> s = rule->Get(Nan::New("string").ToLocalChecked())->ToString();
+				str = *Nan::Utf8String(s);
+			}
+			
+			if (rule->Get(Nan::New("file").ToLocalChecked())->IsString()) {
+				Local<String> s = rule->Get(Nan::New("file").ToLocalChecked())->ToString();
+				file = *Nan::Utf8String(s);
+			}
+
+			RuleConfig* rule_config = new RuleConfig();
+
+			rule_config->isFile = file.length()
+					? true
+					: false;
+
+			rule_config->source = file.length()
+					? file
+					: str;
+
+			rule_config->ns = ns;
+
+			rule_configs->push_back(rule_config);
+		}
+	}
+
 	Nan::Callback* callback = new Nan::Callback(info[1].As<Function>());
 	
 	ScannerWrap* scanner = ScannerWrap::Unwrap<ScannerWrap>(info.This());
 
-	AsyncAddRules* async_add_rules = new AsyncAddRules(
+	AsyncConfigure* async_configure = new AsyncConfigure(
 			scanner,
-			std::string(*Nan::Utf8String(info[0])),
+			rule_configs,
 			callback
 		);
 
-	Nan::AsyncQueueWorker(async_add_rules);
+	Nan::AsyncQueueWorker(async_configure);
 
 	info.GetReturnValue().Set(info.This());
-}
-
-NAN_METHOD(ScannerWrap::ErrorCodeToString) {
-	Nan::HandleScope scope;
-
-	if (info.Length() < 1) {
-		Nan::ThrowError("One argument is required");
-		return;
-	}
-
-	if (! info[0]->IsInt32()) {
-		Nan::ThrowError("Code argument must be a int32");
-		return;
-	}
-
-	int code = Nan::To<v8::Int32>(info[0]).ToLocalChecked()->Value();
-
-	info.GetReturnValue().Set(Nan::New<String>(getErrorString(code)).ToLocalChecked());
 }
 
 }; /* namespace yara */
