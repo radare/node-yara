@@ -245,6 +245,27 @@ struct RuleConfig {
 
 typedef std::list<RuleConfig*> RuleConfigList;
 
+class AsyncConfigure; // Forward declare for the callback.
+
+void compileCallback(int error_level, const char* file_name, int line_number,
+		const char* message, void* user_data) {
+	AsyncConfigure* configure = (AsyncConfigure*) user_data;
+
+	std::ostringstream oss;
+
+	oss << (file_name ? file_name : "[input-string]")
+			<< ":"
+			<< line_number
+			<< ": "
+			<< message;
+	
+	if (error_level == YARA_ERROR_LEVEL_WARNING) {
+		fprintf(stderr, "WARNING %s\n", oss.str().c_str());
+	} else {
+		fprintf(stderr, "ERROR %s\n", oss.str().c_str());
+	}
+}
+
 class AsyncConfigure : public Nan::AsyncWorker {
 public:
 	AsyncConfigure(
@@ -287,12 +308,12 @@ public:
 				scanner_->compiler = NULL;
 			}
 
-			if (! scanner_->compiler) {
-				int rc = yr_compiler_create(&scanner_->compiler);
-				if (rc != ERROR_SUCCESS) 
-					yara_throw(YaraError, "yr_compiler_create() failed: "
-							<< getErrorString(rc));
-			}
+			int rc = yr_compiler_create(&scanner_->compiler);
+			if (rc != ERROR_SUCCESS) 
+				yara_throw(YaraError, "yr_compiler_create() failed: "
+						<< getErrorString(rc));
+			yr_compiler_set_callback(scanner_->compiler, compileCallback,
+					(void*) this);
 
 			RuleConfig* rule_config;
 			RuleConfigList::iterator rule_configs_it;
@@ -341,7 +362,7 @@ public:
 			// TODO: Set a compiler callback and record errors
 			// TODO: Throw an exception if any found
 			
-			int rc = yr_compiler_get_rules(scanner_->compiler, &scanner_->rules);
+			rc = yr_compiler_get_rules(scanner_->compiler, &scanner_->rules);
 			if (rc != ERROR_SUCCESS)
 				yara_throw(YaraError, "yr_compiler_get_rules() failed: "
 						<< getErrorString(rc));
@@ -365,6 +386,8 @@ protected:
 private:
 	ScannerWrap* scanner_;
 	RuleConfigList* rule_configs_;
+	std::list<std::string> errors_;
+	std::list<std::string> warnings_;
 };
 
 NAN_METHOD(ScannerWrap::Configure) {
