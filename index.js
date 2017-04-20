@@ -1,4 +1,5 @@
 
+var util = require("util")
 var yara = require ("./build/Release/yara");
 
 function _expandConstantObject(object) {
@@ -11,16 +12,40 @@ function _expandConstantObject(object) {
 
 _expandConstantObject(yara.ErrorCode)
 
+function CompileRulesError(message) {
+	this.name = "CompileRulesError"
+	this.message = message
+}
+
+util.inherits(CompileRulesError, Error)
+
 function Scanner(options) {
 	this.yara = new yara.ScannerWrap()
 }
 
-Scanner.prototype.addRules = function(rules, cb) {
-	return this.yara.addRules(rules, cb)
-}
-
 Scanner.prototype.configure = function(options, cb) {
-	return this.yara.configure(options, cb)
+	return this.yara.configure(options, function(error) {
+		if (error) {
+			if (error.errors) {
+				var errors = []
+
+				error.errors.forEach(function(item) {
+					var fields = item.split(":")
+					errors.push({
+						index: fields[0],
+						line: fields[1],
+						message: fields[2]
+					})
+				})
+
+				error = new CompileRulesError(error.message)
+				error.errors = errors
+			}
+			cb(error)
+		} else {
+			cb()
+		}
+	})
 }
 
 exports.Scanner = Scanner

@@ -33,6 +33,9 @@ std::map<int, const char*> error_codes;
 
 #define ERROR_UNKNOWN_STRING "ERROR_UNKNOWN"
 
+void compileCallback(int error_level, const char* file_name, int line_number,
+		const char* message, void* user_data);
+
 const char* getErrorString(int code) {
 	size_t count = error_codes.count(code);
 	if (count > 0)
@@ -241,30 +244,17 @@ struct RuleConfig {
 	bool isFile;
 	std::string source;
 	std::string ns;
+	uint32_t index;
+};
+
+class AsyncConfigure;
+
+struct CompileArgs {
+	RuleConfig* rule_config;
+	AsyncConfigure* configure;
 };
 
 typedef std::list<RuleConfig*> RuleConfigList;
-
-class AsyncConfigure; // Forward declare for the callback.
-
-void compileCallback(int error_level, const char* file_name, int line_number,
-		const char* message, void* user_data) {
-	AsyncConfigure* configure = (AsyncConfigure*) user_data;
-
-	std::ostringstream oss;
-
-	oss << (file_name ? file_name : "[input-string]")
-			<< ":"
-			<< line_number
-			<< ": "
-			<< message;
-	
-	if (error_level == YARA_ERROR_LEVEL_WARNING) {
-		fprintf(stderr, "WARNING %s\n", oss.str().c_str());
-	} else {
-		fprintf(stderr, "ERROR %s\n", oss.str().c_str());
-	}
-}
 
 class AsyncConfigure : public Nan::AsyncWorker {
 public:
@@ -307,21 +297,28 @@ public:
 				yr_compiler_destroy(scanner_->compiler);
 				scanner_->compiler = NULL;
 			}
+			
+			CompileArgs compile_args;
+			compile_args.configure = this;
 
 			int rc = yr_compiler_create(&scanner_->compiler);
 			if (rc != ERROR_SUCCESS) 
 				yara_throw(YaraError, "yr_compiler_create() failed: "
 						<< getErrorString(rc));
 			yr_compiler_set_callback(scanner_->compiler, compileCallback,
-					(void*) this);
+					(void*) &compile_args);
 
 			RuleConfig* rule_config;
 			RuleConfigList::iterator rule_configs_it;
+			
+			error_count = 0;
 
 			for (rule_configs_it = rule_configs_->begin();
 					rule_configs_it != rule_configs_->end();
 					rule_configs_it++) {
 				rule_config = *rule_configs_it;
+
+				compile_args.rule_config = rule_config;
 
 				if (rule_config->isFile) {
 					FILE *fp = fopen(rule_config->source.c_str(), "r");
@@ -329,7 +326,7 @@ public:
 						yara_throw(YaraError, "fopen(" << rule_config->source.c_str()
 								<< ") failed: " << yara_strerror(errno));
 
-					int rc = yr_compiler_add_file(
+					error_count += yr_compiler_add_file(
 							scanner_->compiler,
 							fp,
 							rule_config->ns.length()
@@ -339,29 +336,17 @@ public:
 						);
 
 					fclose(fp);
-					
-					if (rc > 0)
-						yara_throw(YaraError, "yr_compiler_add_file(" <<
-								rule_config->source.c_str() << ") failed: "
-								<< getErrorString(rc));
 				} else {
-					int rc = yr_compiler_add_string(
+					error_count += yr_compiler_add_string(
 							scanner_->compiler,
 							rule_config->source.c_str(),
 							rule_config->ns.length()
 									? rule_config->ns.c_str()
 									: NULL
 						);
-
-					if (rc > 0)
-						yara_throw(YaraError, "yr_compiler_add_string() failed: "
-								<< getErrorString(rc));
 				}
 			}
 
-			// TODO: Set a compiler callback and record errors
-			// TODO: Throw an exception if any found
-			
 			rc = yr_compiler_get_rules(scanner_->compiler, &scanner_->rules);
 			if (rc != ERROR_SUCCESS)
 				yara_throw(YaraError, "yr_compiler_get_rules() failed: "
@@ -373,22 +358,59 @@ public:
 		scanner_->unlock();
 	}
 
+	uint32_t error_count;
+	std::list<std::string> errors;
+	std::list<std::string> warnings;
+
 protected:
 
 	void HandleOKCallback() {
-		Local<Value> argv[1];
+		if (error_count > 0) {
+			Local<Object> error = Nan::To<Object>(Nan::Error("Error compiling rules")).ToLocalChecked();
 
-		argv[0] = Nan::Null();
-		
-		callback->Call(1, argv);
+			//Local<Object> errors_object = Nan::New<Object>();
+			//Local<Array> errors_array = Array::Cast(errors_object);
+			Local<Array> errors_array = Nan::New<Array>();
+			uint32_t index = 0;
+
+			std::list<std::string>::iterator errors_it = errors.begin();
+
+			while (errors_it != errors.end()) {
+				Nan::MaybeLocal<String> str = Nan::New<String>((*errors_it).c_str());
+				errors_array->Set(index++, str.ToLocalChecked());
+				errors_it++;
+			}
+
+			error->Set(Nan::New<String>("errors").ToLocalChecked(), errors_array);
+
+			Local<Value> argv[1];
+			argv[0] = error;
+			callback->Call(1, argv);
+		} else {
+			Local<Value> argv[1];
+			argv[0] = Nan::Null();
+			callback->Call(1, argv);
+		}
 	}
 
 private:
 	ScannerWrap* scanner_;
 	RuleConfigList* rule_configs_;
-	std::list<std::string> errors_;
-	std::list<std::string> warnings_;
+
 };
+
+void compileCallback(int error_level, const char* file_name, int line_number,
+		const char* message, void* user_data) {
+	CompileArgs* args = (CompileArgs*) user_data;
+
+	std::ostringstream oss;
+	oss << args->rule_config->index << ":" << line_number << ":" << message;
+	
+	if (error_level == YARA_ERROR_LEVEL_WARNING) 
+		args->configure->warnings.push_back(oss.str());
+	else
+		args->configure->errors.push_back(oss.str());
+}
 
 NAN_METHOD(ScannerWrap::Configure) {
 	Nan::HandleScope scope;
@@ -450,6 +472,8 @@ NAN_METHOD(ScannerWrap::Configure) {
 					: str;
 
 			rule_config->ns = ns;
+
+			rule_config->index = i;
 
 			rule_configs->push_back(rule_config);
 		}
