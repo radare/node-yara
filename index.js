@@ -32,8 +32,8 @@ Scanner.prototype.configure = function(options, cb) {
 				error.errors.forEach(function(item) {
 					var fields = item.split(":")
 					errors.push({
-						index: fields[0],
-						line: fields[1],
+						index: parseInt(fields[0]),
+						line: parseInt(fields[1]),
 						message: fields[2]
 					})
 				})
@@ -48,7 +48,11 @@ Scanner.prototype.configure = function(options, cb) {
 	})
 }
 
+exports.CompileRulesError = CompileRulesError
+
 exports.Scanner = Scanner
+
+exports.VariableType = yara.VariableType;
 
 exports.createScanner = function(options) {
 	return new Scanner(options || {})

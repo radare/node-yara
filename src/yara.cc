@@ -29,6 +29,13 @@ static Nan::Persistent<FunctionTemplate> ScannerWrap_constructor;
 
 std::map<int, const char*> error_codes;
 
+enum VarType {
+	IntegerVarType = 1,
+	FloatVarType   = 2,
+	BooleanVarType = 3,
+	StringVarType  = 4
+};
+
 #define MAP_ERROR_CODE(name, code) error_codes[code] = name
 
 #define ERROR_UNKNOWN_STRING "ERROR_UNKNOWN"
@@ -108,12 +115,24 @@ void InitAll(Handle<Object> exports) {
    MAP_ERROR_CODE("ERROR_COULD_NOT_READ_PROCESS_MEMORY", ERROR_COULD_NOT_READ_PROCESS_MEMORY);
    MAP_ERROR_CODE("ERROR_INVALID_EXTERNAL_VARIABLE_TYPE", ERROR_INVALID_EXTERNAL_VARIABLE_TYPE);
 
-	ExportFunctions (exports);
+	ExportConstants(exports);
+	ExportFunctions(exports);
 
 	ScannerWrap::Init(exports);
 }
 
 NODE_MODULE(yara, InitAll)
+
+void ExportConstants(Handle<Object> target) {
+	Local<Object> variable_type = Nan::New<Object>();
+
+	Nan::Set(target, Nan::New("VariableType").ToLocalChecked(), variable_type);
+
+	Nan::Set(variable_type, Nan::New("Integer").ToLocalChecked(), Nan::New<Number>(IntegerVarType));
+	Nan::Set(variable_type, Nan::New("Float").ToLocalChecked(), Nan::New<Number>(FloatVarType));
+	Nan::Set(variable_type, Nan::New("Boolean").ToLocalChecked(), Nan::New<Number>(BooleanVarType));
+	Nan::Set(variable_type, Nan::New("String").ToLocalChecked(), Nan::New<Number>(StringVarType));
+}
 
 void ExportFunctions(Handle<Object> target) {
 	Nan::Set(target, Nan::New("initialize").ToLocalChecked(),
@@ -247,6 +266,15 @@ struct RuleConfig {
 	uint32_t index;
 };
 
+struct VarConfig {
+	VarType type;
+	std::string id;
+	int64_t value_integer;
+	double value_float;
+	bool value_boolean;
+	std::string value_string;
+};
+
 class AsyncConfigure;
 
 struct CompileArgs {
@@ -255,16 +283,19 @@ struct CompileArgs {
 };
 
 typedef std::list<RuleConfig*> RuleConfigList;
+typedef std::list<VarConfig*> VarConfigList;
 
 class AsyncConfigure : public Nan::AsyncWorker {
 public:
 	AsyncConfigure(
 			ScannerWrap* scanner,
 			RuleConfigList* rule_configs,
+			VarConfigList* var_configs,
 			Nan::Callback* callback
 		) : Nan::AsyncWorker(callback),
 				scanner_(scanner),
-				rule_configs_(rule_configs) {}
+				rule_configs_(rule_configs),
+				var_configs_(var_configs) {}
 	
 	~AsyncConfigure() {
 		if (rule_configs_) {
@@ -281,6 +312,22 @@ public:
 			rule_configs_->clear();
 			delete rule_configs_;
 			rule_configs_ = NULL;
+		}
+
+		if (var_configs_) {
+			VarConfig* var_config;
+			VarConfigList::iterator var_configs_it;
+
+			for (var_configs_it = var_configs_->begin();
+					var_configs_it != var_configs_->end();
+					var_configs_it++) {
+				var_config = *var_configs_it;
+				delete var_config;
+			}
+
+			var_configs_->clear();
+			delete var_configs_;
+			var_configs_ = NULL;
 		}
 	}
 
@@ -347,6 +394,62 @@ public:
 				}
 			}
 
+			VarConfig* var_config;
+			VarConfigList::iterator var_configs_it;
+			
+			for (var_configs_it = var_configs_->begin();
+					var_configs_it != var_configs_->end();
+					var_configs_it++) {
+				var_config = *var_configs_it;
+
+				switch (var_config->type) {
+					case IntegerVarType:
+						rc = yr_compiler_define_integer_variable(
+								scanner_->compiler,
+								var_config->id.c_str(),
+								var_config->value_integer
+							);
+						if (rc != ERROR_SUCCESS)
+							yara_throw(YaraError, "yr_compiler_define_integer_variable() failed: "
+									<< getErrorString(rc));
+						break;
+					case FloatVarType:
+						rc = yr_compiler_define_float_variable(
+								scanner_->compiler,
+								var_config->id.c_str(),
+								var_config->value_float
+							);
+						if (rc != ERROR_SUCCESS)
+							yara_throw(YaraError, "yr_compiler_define_float_variable() failed: "
+									<< getErrorString(rc));
+						break;
+					case BooleanVarType:
+						rc = yr_compiler_define_boolean_variable(
+								scanner_->compiler,
+								var_config->id.c_str(),
+								var_config->value_boolean ? 1 : 0
+							);
+						if (rc != ERROR_SUCCESS)
+							yara_throw(YaraError, "yr_compiler_define_boolean_variable() failed: "
+									<< getErrorString(rc));
+						break;
+					case StringVarType:
+						rc = yr_compiler_define_string_variable(
+								scanner_->compiler,
+								var_config->id.c_str(),
+								var_config->value_string.c_str()
+							);
+						if (rc != ERROR_SUCCESS)
+							yara_throw(YaraError, "yr_compiler_define_string_variable() failed: "
+									<< getErrorString(rc));
+						break;
+					default:
+						yara_throw(YaraError, "unknown variable type: "
+								<< var_config->type);
+						break;
+				}
+			}
+
 			rc = yr_compiler_get_rules(scanner_->compiler, &scanner_->rules);
 			if (rc != ERROR_SUCCESS)
 				yara_throw(YaraError, "yr_compiler_get_rules() failed: "
@@ -368,8 +471,6 @@ protected:
 		if (error_count > 0) {
 			Local<Object> error = Nan::To<Object>(Nan::Error("Error compiling rules")).ToLocalChecked();
 
-			//Local<Object> errors_object = Nan::New<Object>();
-			//Local<Array> errors_array = Array::Cast(errors_object);
 			Local<Array> errors_array = Nan::New<Array>();
 			uint32_t index = 0;
 
@@ -396,7 +497,7 @@ protected:
 private:
 	ScannerWrap* scanner_;
 	RuleConfigList* rule_configs_;
-
+	VarConfigList* var_configs_;
 };
 
 void compileCallback(int error_level, const char* file_name, int line_number,
@@ -478,7 +579,54 @@ NAN_METHOD(ScannerWrap::Configure) {
 			rule_configs->push_back(rule_config);
 		}
 	}
+	
+	VarConfigList* var_configs = new VarConfigList();
 
+	Local<Array> variables = Local<Array>::Cast(
+			Nan::Get(options, Nan::New("variables").ToLocalChecked()).ToLocalChecked()
+		);
+
+	for (uint32_t i = 0; i < variables->Length(); i++) {
+		if (variables->Get(i)->IsObject()) {
+			Local<Object> variable = variables->Get(i)->ToObject();
+
+			VarType type;
+			std::string id;
+
+			Local<Uint32> t = Nan::To<Uint32>(variable->Get(Nan::New("type").ToLocalChecked())).ToLocalChecked();
+			type = (VarType) t->Value();
+
+			Local<String> i = Nan::To<String>(variable->Get(Nan::New("id").ToLocalChecked())).ToLocalChecked();
+			id = *Nan::Utf8String(i);
+
+			VarConfig* var_config = new VarConfig();
+
+			var_config->type = type;
+			var_config->id = id;
+
+			switch (type) {
+				case IntegerVarType:
+					var_config->value_integer = Nan::To<Integer>(variable->Get(
+							Nan::New("value").ToLocalChecked())).ToLocalChecked()->Value();
+					break;
+				case FloatVarType:
+					var_config->value_float = Nan::To<Number>(variable->Get(
+							Nan::New("value").ToLocalChecked())).ToLocalChecked()->Value();
+					break;
+				case BooleanVarType:
+					var_config->value_boolean = Nan::To<Boolean>(variable->Get(
+							Nan::New("value").ToLocalChecked())).ToLocalChecked()->Value();
+					break;
+				case StringVarType:
+					var_config->value_string = *Nan::Utf8String(Nan::To<String>(
+							variable->Get(Nan::New("value").ToLocalChecked())).ToLocalChecked());
+					break;
+			}
+
+			var_configs->push_back(var_config);
+		}
+	}
+	
 	Nan::Callback* callback = new Nan::Callback(info[1].As<Function>());
 	
 	ScannerWrap* scanner = ScannerWrap::Unwrap<ScannerWrap>(info.This());
@@ -486,6 +634,7 @@ NAN_METHOD(ScannerWrap::Configure) {
 	AsyncConfigure* async_configure = new AsyncConfigure(
 			scanner,
 			rule_configs,
+			var_configs,
 			callback
 		);
 
