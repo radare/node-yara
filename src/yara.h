@@ -34,6 +34,7 @@ private:
 
 	static NAN_METHOD(New);
 	static NAN_METHOD(Configure);
+	static NAN_METHOD(Scan);
 
 	pthread_rwlock_t lock;
 };

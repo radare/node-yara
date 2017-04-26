@@ -65,7 +65,7 @@ describe("index.js", function() {
 					done()
 				})
 		})
-		
+
 		it("rules.file empty is ignored", function(done) {
 			var scanner = yara.createScanner()
 			scanner.configure({
@@ -202,6 +202,32 @@ describe("index.js", function() {
 					assert(error instanceof Error)
 					assert.equal(error.message, "unknown variable type: 0")
 					done()
+				})
+		})
+	})
+
+	describe("Scanner.scan()", function() {
+		it("buffer valid", function(done) {
+			var scanner = yara.createScanner()
+
+			scanner.configure({
+					rules: [
+						{string: "rule is_stephen {\ncondition:\n\"stephen\"\n}"},
+						{string: "rule is_silvia {\ncondition:\n\"silvia\"\n}"},
+						{string: "rule is_either {\ncondition:\n\"stephen\" or \"silvia\"\n}"}
+					]
+				}, function(error) {
+					assert.ifError(error)
+
+					var req = {
+						uuid: 1,
+						buffer: Buffer.from("my name is stephen")
+					}
+
+					scanner.scan(req, function(error, result) {
+						assert.ifError(error)
+						done()
+					})
 				})
 		})
 	})

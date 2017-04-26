@@ -144,7 +144,7 @@ public:
 	AsyncInitialize(
 			Nan::Callback *callback
 		) : Nan::AsyncWorker(callback) {}
-	
+
 	~AsyncInitialize() {}
 
 	void Execute() {
@@ -160,7 +160,7 @@ protected:
 		Local<Value> argv[1];
 
 		argv[0] = Nan::Null();
-		
+
 		callback->Call(1, argv);
 	}
 };
@@ -213,6 +213,7 @@ void ScannerWrap::Init(Handle<Object> exports) {
 	tpl->InstanceTemplate()->SetInternalFieldCount(1);
 
 	Nan::SetPrototypeMethod(tpl, "configure", Configure);
+	Nan::SetPrototypeMethod(tpl, "scan", Scan);
 
 	ScannerWrap_constructor.Reset(tpl);
 	exports->Set(Nan::New("ScannerWrap").ToLocalChecked(),
@@ -251,7 +252,7 @@ void ScannerWrap::unlock(void) {
 
 NAN_METHOD(ScannerWrap::New) {
 	Nan::HandleScope scope;
-	
+
 	ScannerWrap* scanner = new ScannerWrap();
 
 	scanner->Wrap(info.This());
@@ -296,7 +297,7 @@ public:
 				scanner_(scanner),
 				rule_configs_(rule_configs),
 				var_configs_(var_configs) {}
-	
+
 	~AsyncConfigure() {
 		if (rule_configs_) {
 			RuleConfig* rule_config;
@@ -344,12 +345,12 @@ public:
 				yr_compiler_destroy(scanner_->compiler);
 				scanner_->compiler = NULL;
 			}
-			
+
 			CompileArgs compile_args;
 			compile_args.configure = this;
 
 			int rc = yr_compiler_create(&scanner_->compiler);
-			if (rc != ERROR_SUCCESS) 
+			if (rc != ERROR_SUCCESS)
 				yara_throw(YaraError, "yr_compiler_create() failed: "
 						<< getErrorString(rc));
 			yr_compiler_set_callback(scanner_->compiler, compileCallback,
@@ -357,7 +358,7 @@ public:
 
 			RuleConfig* rule_config;
 			RuleConfigList::iterator rule_configs_it;
-			
+
 			error_count = 0;
 
 			for (rule_configs_it = rule_configs_->begin();
@@ -396,7 +397,7 @@ public:
 
 			VarConfig* var_config;
 			VarConfigList::iterator var_configs_it;
-			
+
 			for (var_configs_it = var_configs_->begin();
 					var_configs_it != var_configs_->end();
 					var_configs_it++) {
@@ -506,8 +507,8 @@ void compileCallback(int error_level, const char* file_name, int line_number,
 
 	std::ostringstream oss;
 	oss << args->rule_config->index << ":" << line_number << ":" << message;
-	
-	if (error_level == YARA_ERROR_LEVEL_WARNING) 
+
+	if (error_level == YARA_ERROR_LEVEL_WARNING)
 		args->configure->warnings.push_back(oss.str());
 	else
 		args->configure->errors.push_back(oss.str());
@@ -515,7 +516,7 @@ void compileCallback(int error_level, const char* file_name, int line_number,
 
 NAN_METHOD(ScannerWrap::Configure) {
 	Nan::HandleScope scope;
-	
+
 	if (info.Length() < 2) {
 		Nan::ThrowError("Two arguments are required");
 		return;
@@ -556,7 +557,7 @@ NAN_METHOD(ScannerWrap::Configure) {
 				Local<String> s = rule->Get(Nan::New("string").ToLocalChecked())->ToString();
 				str = *Nan::Utf8String(s);
 			}
-			
+
 			if (rule->Get(Nan::New("file").ToLocalChecked())->IsString()) {
 				Local<String> s = rule->Get(Nan::New("file").ToLocalChecked())->ToString();
 				file = *Nan::Utf8String(s);
@@ -579,7 +580,7 @@ NAN_METHOD(ScannerWrap::Configure) {
 			rule_configs->push_back(rule_config);
 		}
 	}
-	
+
 	VarConfigList* var_configs = new VarConfigList();
 
 	Local<Array> variables = Local<Array>::Cast(
@@ -626,9 +627,9 @@ NAN_METHOD(ScannerWrap::Configure) {
 			var_configs->push_back(var_config);
 		}
 	}
-	
+
 	Nan::Callback* callback = new Nan::Callback(info[1].As<Function>());
-	
+
 	ScannerWrap* scanner = ScannerWrap::Unwrap<ScannerWrap>(info.This());
 
 	AsyncConfigure* async_configure = new AsyncConfigure(
@@ -639,6 +640,80 @@ NAN_METHOD(ScannerWrap::Configure) {
 		);
 
 	Nan::AsyncQueueWorker(async_configure);
+
+	info.GetReturnValue().Set(info.This());
+}
+
+class AsyncScan : public Nan::AsyncWorker {
+public:
+	AsyncScan(
+			ScannerWrap* scanner,
+			Nan::Callback* callback
+		) : Nan::AsyncWorker(callback),
+				scanner_(scanner) {}
+
+	~AsyncScan() {}
+
+	void Execute() {
+		scanner_->lock_read();
+
+		try {
+			// TODO: Ensure we have rules
+
+			// TODO: Scan file or buffer
+			//rc = yr_compiler_get_rules(scanner_->compiler, &scanner_->rules);
+			//if (rc != ERROR_SUCCESS)
+			//	yara_throw(YaraError, "yr_compiler_get_rules() failed: "
+			//			<< getErrorString(rc));
+		} catch(std::exception& error) {
+			SetErrorMessage(error.what());
+		}
+
+		scanner_->unlock();
+	}
+
+protected:
+
+	void HandleOKCallback() {
+		Local<Value> argv[1];
+		argv[0] = Nan::Null();
+		callback->Call(1, argv);
+	}
+
+private:
+	ScannerWrap* scanner_;
+};
+
+NAN_METHOD(ScannerWrap::Scan) {
+	Nan::HandleScope scope;
+
+	if (info.Length() < 2) {
+		Nan::ThrowError("Two arguments are required");
+		return;
+	}
+
+	if (! info[0]->IsObject()) {
+		Nan::ThrowError("Request argument must be an object");
+		return;
+	}
+
+	if (! info[1]->IsFunction()) {
+		Nan::ThrowError("Callback argument must be a function");
+		return;
+	}
+
+	//Local<Object> req = info[0]->ToObject();
+
+	Nan::Callback* callback = new Nan::Callback(info[1].As<Function>());
+
+	ScannerWrap* scanner = ScannerWrap::Unwrap<ScannerWrap>(info.This());
+
+	AsyncScan* async_scan = new AsyncScan(
+			scanner,
+			callback
+		);
+
+	Nan::AsyncQueueWorker(async_scan);
 
 	info.GetReturnValue().Set(info.This());
 }

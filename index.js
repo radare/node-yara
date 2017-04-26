@@ -3,10 +3,10 @@ var util = require("util")
 var yara = require ("./build/Release/yara");
 
 function _expandConstantObject(object) {
-   var keys = []
-   for (var key in object)
-      keys.push([key, object[key]])
-   for (var i = 0; i < keys.length; i++)
+	var keys = []
+	for (var key in object)
+		keys.push([key, object[key]])
+	for (var i = 0; i < keys.length; i++)
 		object[keys[i][1]] = keys[i][0]
 }
 
@@ -46,6 +46,10 @@ Scanner.prototype.configure = function(options, cb) {
 			cb()
 		}
 	})
+}
+
+Scanner.prototype.scan = function(req, cb) {
+	return this.yara.scan(req, cb)
 }
 
 exports.CompileRulesError = CompileRulesError
