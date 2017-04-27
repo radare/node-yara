@@ -661,7 +661,7 @@ NAN_METHOD(ScannerWrap::Configure) {
 }
 
 struct ScanReq {
-	const char* filename;
+	std::string filename;
 	const char* buffer;
 	int64_t offset;
 	int64_t length;
@@ -710,10 +710,10 @@ public:
 
 			int rc;
 
-			if (scan_req_->filename) {
+			if (scan_req_->filename.length()) {
 				rc = yr_rules_scan_file(
 						scanner_->rules,
-						scan_req_->filename,
+						scan_req_->filename.c_str(),
 						scan_req_->flags,
 						scanCallback,
 						(void*) this,
@@ -735,7 +735,7 @@ public:
 
 			if (rc != ERROR_SUCCESS)
 				yara_throw(YaraError,
-						(scan_req_->filename ? "yr_rules_scan_file" : "yr_rules_scan_mem")
+						(scan_req_->filename.length() ? "yr_rules_scan_file" : "yr_rules_scan_mem")
 						<< "() failed: " << getErrorString(rc));
 		} catch(std::exception& error) {
 			SetErrorMessage(error.what());
