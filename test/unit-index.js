@@ -66,11 +66,11 @@ describe("index.js", function() {
 				})
 		})
 
-		it("rules.file empty is ignored", function(done) {
+		it("rules.filename empty is ignored", function(done) {
 			var scanner = yara.createScanner()
 			scanner.configure({
 					rules: [
-						{file: ""}
+						{filename: ""}
 					]
 				}, done)
 		})
@@ -79,7 +79,7 @@ describe("index.js", function() {
 			var scanner = yara.createScanner()
 			scanner.configure({
 					rules: [
-						{file: "test/data/unit-index/invalid.yara"}
+						{filename: "test/data/unit-index/invalid.yara"}
 					]
 				}, function(error) {
 					assert(error)
@@ -93,7 +93,7 @@ describe("index.js", function() {
 
 			scanner.configure({
 					rules: [
-						{file: "test/data/unit-index/bad.yara"}
+						{filename: "test/data/unit-index/bad.yara"}
 					]
 				}, function(error) {
 					assert(error instanceof yara.CompileRulesError)
@@ -111,12 +111,12 @@ describe("index.js", function() {
 				})
 		})
 
-		it("rules.files valid", function(done) {
+		it("rules.filename valid", function(done) {
 			var scanner = yara.createScanner()
 
 			scanner.configure({
 					rules: [
-						{file: "test/data/unit-index/good.yara"}
+						{filename: "test/data/unit-index/good.yara"}
 					]
 				}, function(error) {
 					assert.ifError(error)
@@ -129,7 +129,7 @@ describe("index.js", function() {
 
 			scanner.configure({
 					rules: [
-						{file: "test/data/unit-index/good.yara"}
+						{filename: "test/data/unit-index/good.yara"}
 					],
 					variables: [
 						{type: yara.VariableType.Integer, id: "skill_level", value: 34}
@@ -145,7 +145,7 @@ describe("index.js", function() {
 
 			scanner.configure({
 					rules: [
-						{file: "test/data/unit-index/good.yara"}
+						{filename: "test/data/unit-index/good.yara"}
 					],
 					variables: [
 						{type: yara.VariableType.Float, id: "percent", value: 0.45}
@@ -161,7 +161,7 @@ describe("index.js", function() {
 
 			scanner.configure({
 					rules: [
-						{file: "test/data/unit-index/good.yara"}
+						{filename: "test/data/unit-index/good.yara"}
 					],
 					variables: [
 						{type: yara.VariableType.Boolean, id: "isYara", value: true}
@@ -177,7 +177,7 @@ describe("index.js", function() {
 
 			scanner.configure({
 					rules: [
-						{file: "test/data/unit-index/good.yara"}
+						{filename: "test/data/unit-index/good.yara"}
 					],
 					variables: [
 						{type: yara.VariableType.String, id: "name", value: "stephen"}
@@ -193,7 +193,7 @@ describe("index.js", function() {
 
 			scanner.configure({
 					rules: [
-						{file: "test/data/unit-index/good.yara"}
+						{filename: "test/data/unit-index/good.yara"}
 					],
 					variables: [
 						{id: "skill_level", value: 34}

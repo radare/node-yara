@@ -1,7 +1,60 @@
 
 # yara 
 
-**COMING SOON**
+**WORK IN PROGRESS - ALMOST DONE**
+
+# Example
+
+	##
+	## Linux only (for now), and builds software using node-gyp.
+	##
+	npm install yara
+
+	var yara = require("yara")
+
+	yara.initialize(function(error) {
+		if (error) {
+			console.error(error)
+		} else {
+			var rule =
+					"rule is_good : tag1 tag2 {\n"
+					+ "	meta:\n"
+					+ "		created_by = \"stephen\"\n"
+					+ "	condition:\n"
+					+ "		true\n"
+					+ "}"
+		
+			var options = {
+				rules: [
+					{filename: "rules.yara"},
+					{string: rule}
+				],
+				variables: [
+					{type: yara.VariableType.Integer, id: "goodness_level", value: 100}
+				]
+			}
+
+			scanner.configure(options, function(error) {
+				if (error) {
+					if (error instanceof yara.CompileRulesError) {
+						console.error(error.message + ": " + JSON.stringify(error.errors))
+					} else {
+						console.error(error)
+					}
+				} else {
+					fs.readdirSync("/lib64").forEach(function(file) {
+						scanner.scan({filename: "/lib64/" + file}, function(path, error, result) {
+							if (error) {
+								console.error("scan %s failed: %s", path, error.message)
+							} else {
+								console.error("scan %s done: %s", path, JSON.stringify(result))
+							}
+						}.bind(this, "/lib64/" + file))
+					})
+				}
+			})
+		}
+	})
 
 # License
 

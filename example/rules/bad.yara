@@ -12,3 +12,10 @@ rule bad : log store delete {
 		($f2 at 1) and $f1
 }
 
+import "magic"
+
+rule binary {
+	condition:
+		magic.mime_type() == "application/x-object"
+}
+

@@ -562,7 +562,7 @@ NAN_METHOD(ScannerWrap::Configure) {
 
 			std::string ns;
 			std::string str;
-			std::string file;
+			std::string filename;
 
 			if (rule->Get(Nan::New("namespace").ToLocalChecked())->IsString()) {
 				Local<String> s = rule->Get(Nan::New("namespace").ToLocalChecked())->ToString();
@@ -574,19 +574,19 @@ NAN_METHOD(ScannerWrap::Configure) {
 				str = *Nan::Utf8String(s);
 			}
 
-			if (rule->Get(Nan::New("file").ToLocalChecked())->IsString()) {
-				Local<String> s = rule->Get(Nan::New("file").ToLocalChecked())->ToString();
-				file = *Nan::Utf8String(s);
+			if (rule->Get(Nan::New("filename").ToLocalChecked())->IsString()) {
+				Local<String> s = rule->Get(Nan::New("filename").ToLocalChecked())->ToString();
+				filename = *Nan::Utf8String(s);
 			}
 
 			RuleConfig* rule_config = new RuleConfig();
 
-			rule_config->isFile = file.length()
+			rule_config->isFile = filename.length()
 					? true
 					: false;
 
-			rule_config->source = file.length()
-					? file
+			rule_config->source = filename.length()
+					? filename
 					: str;
 
 			rule_config->ns = ns;

@@ -34,7 +34,7 @@ yara.initialize(function(error) {
 	} else {
 		var options = {
 			rules: [
-				{file: rules}
+				{filename: rules}
 			]
 		}
 
