@@ -49,14 +49,50 @@ Scanner.prototype.configure = function(options, cb) {
 }
 
 Scanner.prototype.scan = function(req, cb) {
-	return this.yara.scan(req, cb)
+	if (req.buffer) {
+		if (! req.offset)
+			req.offset = 0
+		if (! req.length)
+			req.length = req.buffer.length
+	}
+
+	return this.yara.scan(req, function(error, result) {
+		if (error) {
+			cb(error)
+		} else {
+			result.rules.forEach(function(rule) {
+				for (var i = 0; i < rule.metas.length; i++) {
+					var fields = rule.metas[i].split(":")
+
+					var meta = {
+						type: fields[0],
+						identifier: fields[1],
+						value: fields[2]
+					}
+
+					if (meta.type == yara.MetaType.Integer)
+						meta.value = parseInt(meta.value)
+					else if (meta.type == yara.MetaType.Integer)
+						meta.value = parseInt(meta.value) ? true : false
+
+					rule.metas[i] = meta
+				}
+			})
+
+			cb(null, result)
+		}
+	})
 }
 
 exports.CompileRulesError = CompileRulesError
 
 exports.Scanner = Scanner
 
-exports.VariableType = yara.VariableType;
+exports.MetaType = yara.MetaType
+
+exports.ScanFlag = yara.ScanFlag
+
+exports.VariableType = yara.VariableType
 
 exports.createScanner = function(options) {
 	return new Scanner(options || {})

@@ -43,6 +43,8 @@ enum VarType {
 void compileCallback(int error_level, const char* file_name, int line_number,
 		const char* message, void* user_data);
 
+int scanCallback(int message, void* data, void* param);
+
 const char* getErrorString(int code) {
 	size_t count = error_codes.count(code);
 	if (count > 0)
@@ -132,6 +134,20 @@ void ExportConstants(Handle<Object> target) {
 	Nan::Set(variable_type, Nan::New("Float").ToLocalChecked(), Nan::New<Number>(FloatVarType));
 	Nan::Set(variable_type, Nan::New("Boolean").ToLocalChecked(), Nan::New<Number>(BooleanVarType));
 	Nan::Set(variable_type, Nan::New("String").ToLocalChecked(), Nan::New<Number>(StringVarType));
+
+	Local<Object> scan_flag = Nan::New<Object>();
+
+	Nan::Set(target, Nan::New("ScanFlag").ToLocalChecked(), scan_flag);
+
+	Nan::Set(variable_type, Nan::New("FastMode").ToLocalChecked(), Nan::New<Number>(SCAN_FLAGS_FAST_MODE));
+
+	Local<Object> meta_type = Nan::New<Object>();
+
+	Nan::Set(target, Nan::New("MetaType").ToLocalChecked(), meta_type);
+
+	Nan::Set(meta_type, Nan::New("Integer").ToLocalChecked(), Nan::New<Number>(META_TYPE_INTEGER));
+	Nan::Set(meta_type, Nan::New("Boolean").ToLocalChecked(), Nan::New<Number>(META_TYPE_BOOLEAN));
+	Nan::Set(meta_type, Nan::New("String").ToLocalChecked(), Nan::New<Number>(META_TYPE_STRING));
 }
 
 void ExportFunctions(Handle<Object> target) {
@@ -356,45 +372,6 @@ public:
 			yr_compiler_set_callback(scanner_->compiler, compileCallback,
 					(void*) &compile_args);
 
-			RuleConfig* rule_config;
-			RuleConfigList::iterator rule_configs_it;
-
-			error_count = 0;
-
-			for (rule_configs_it = rule_configs_->begin();
-					rule_configs_it != rule_configs_->end();
-					rule_configs_it++) {
-				rule_config = *rule_configs_it;
-
-				compile_args.rule_config = rule_config;
-
-				if (rule_config->isFile) {
-					FILE *fp = fopen(rule_config->source.c_str(), "r");
-					if (! fp)
-						yara_throw(YaraError, "fopen(" << rule_config->source.c_str()
-								<< ") failed: " << yara_strerror(errno));
-
-					error_count += yr_compiler_add_file(
-							scanner_->compiler,
-							fp,
-							rule_config->ns.length()
-									? rule_config->ns.c_str()
-									: NULL,
-							rule_config->source.c_str()
-						);
-
-					fclose(fp);
-				} else {
-					error_count += yr_compiler_add_string(
-							scanner_->compiler,
-							rule_config->source.c_str(),
-							rule_config->ns.length()
-									? rule_config->ns.c_str()
-									: NULL
-						);
-				}
-			}
-
 			VarConfig* var_config;
 			VarConfigList::iterator var_configs_it;
 
@@ -445,9 +422,48 @@ public:
 									<< getErrorString(rc));
 						break;
 					default:
-						yara_throw(YaraError, "unknown variable type: "
+						yara_throw(YaraError, "Unknown variable type: "
 								<< var_config->type);
 						break;
+				}
+			}
+
+			RuleConfig* rule_config;
+			RuleConfigList::iterator rule_configs_it;
+
+			error_count = 0;
+
+			for (rule_configs_it = rule_configs_->begin();
+					rule_configs_it != rule_configs_->end();
+					rule_configs_it++) {
+				rule_config = *rule_configs_it;
+
+				compile_args.rule_config = rule_config;
+
+				if (rule_config->isFile) {
+					FILE *fp = fopen(rule_config->source.c_str(), "r");
+					if (! fp)
+						yara_throw(YaraError, "fopen(" << rule_config->source.c_str()
+								<< ") failed: " << yara_strerror(errno));
+
+					error_count += yr_compiler_add_file(
+							scanner_->compiler,
+							fp,
+							rule_config->ns.length()
+									? rule_config->ns.c_str()
+									: NULL,
+							rule_config->source.c_str()
+						);
+
+					fclose(fp);
+				} else {
+					error_count += yr_compiler_add_string(
+							scanner_->compiler,
+							rule_config->source.c_str(),
+							rule_config->ns.length()
+									? rule_config->ns.c_str()
+									: NULL
+						);
 				}
 			}
 
@@ -644,27 +660,83 @@ NAN_METHOD(ScannerWrap::Configure) {
 	info.GetReturnValue().Set(info.This());
 }
 
+struct ScanReq {
+	const char* filename;
+	const char* buffer;
+	int64_t offset;
+	int64_t length;
+	int32_t flags;
+	int32_t timeout;
+};
+
+struct ScanRuleMatch {
+	std::string name;
+	std::list<std::string> tags;
+	std::list<std::string> metas;
+};
+
+typedef std::list<ScanRuleMatch*> ScanRuleMatchList;
+
 class AsyncScan : public Nan::AsyncWorker {
 public:
 	AsyncScan(
 			ScannerWrap* scanner,
+			ScanReq* scan_req,
 			Nan::Callback* callback
 		) : Nan::AsyncWorker(callback),
-				scanner_(scanner) {}
+				scanner_(scanner),
+				scan_req_(scan_req) {}
 
-	~AsyncScan() {}
+	~AsyncScan() {
+		ScanRuleMatch* rule_match;
+		ScanRuleMatchList::iterator rule_matches_it;
+
+		for (rule_matches_it = rule_matches.begin();
+				rule_matches_it != rule_matches.end();
+				rule_matches_it++) {
+			rule_match = *rule_matches_it;
+			delete rule_match;
+		}
+
+		rule_matches.clear();
+	}
 
 	void Execute() {
 		scanner_->lock_read();
 
 		try {
-			// TODO: Ensure we have rules
+			if (! scanner_->rules)
+				yara_throw(YaraError, "Scanner has not been configured");
 
-			// TODO: Scan file or buffer
-			//rc = yr_compiler_get_rules(scanner_->compiler, &scanner_->rules);
-			//if (rc != ERROR_SUCCESS)
-			//	yara_throw(YaraError, "yr_compiler_get_rules() failed: "
-			//			<< getErrorString(rc));
+			int rc;
+
+			if (scan_req_->filename) {
+				rc = yr_rules_scan_file(
+						scanner_->rules,
+						scan_req_->filename,
+						scan_req_->flags,
+						scanCallback,
+						(void*) this,
+						scan_req_->timeout
+					);
+			} else if (scan_req_->buffer) {
+				rc = yr_rules_scan_mem(
+						scanner_->rules,
+						(uint8_t*) scan_req_->buffer + scan_req_->offset,
+						scan_req_->length,
+						scan_req_->flags,
+						scanCallback,
+						(void*) this,
+						scan_req_->timeout
+					);
+			} else {
+				yara_throw(YaraError, "Either filename of buffer is required");
+			}
+
+			if (rc != ERROR_SUCCESS)
+				yara_throw(YaraError,
+						(scan_req_->filename ? "yr_rules_scan_file" : "yr_rules_scan_mem")
+						<< "() failed: " << getErrorString(rc));
 		} catch(std::exception& error) {
 			SetErrorMessage(error.what());
 		}
@@ -672,17 +744,119 @@ public:
 		scanner_->unlock();
 	}
 
+	ScanRuleMatchList rule_matches;
+
 protected:
 
 	void HandleOKCallback() {
-		Local<Value> argv[1];
+
+		Local<Object> res = Nan::New<Object>();
+
+		Local<Array> matches = Nan::New<Array>();
+		int matches_index = 0;
+
+		for (ScanRuleMatchList::iterator rule_matches_it = rule_matches.begin();
+				rule_matches_it != rule_matches.end();
+				rule_matches_it++) {
+			ScanRuleMatch* rule_match = *rule_matches_it;
+
+			Local<Object> match = Nan::New<Object>();
+
+			Local<Array> tags = Nan::New<Array>();
+			int tags_index = 0;
+
+			for (std::list<std::string>::iterator tags_it = rule_match->tags.begin();
+					tags_it != rule_match->tags.end();
+					tags_it++) {
+				Local<String> tag = Nan::New((*tags_it).c_str()).ToLocalChecked();
+				tags->Set(tags_index++, tag);
+			}
+
+			Local<Array> metas = Nan::New<Array>();
+			int metas_index = 0;
+
+			for (std::list<std::string>::iterator metas_it = rule_match->metas.begin();
+					metas_it != rule_match->metas.end();
+					metas_it++) {
+				Local<String> meta = Nan::New((*metas_it).c_str()).ToLocalChecked();
+				metas->Set(metas_index++, meta);
+			}
+
+			match->Set(Nan::New("name").ToLocalChecked(), Nan::New(rule_match->name.c_str()).ToLocalChecked());
+			match->Set(Nan::New("tags").ToLocalChecked(), tags);
+			match->Set(Nan::New("metas").ToLocalChecked(), metas);
+
+			matches->Set(matches_index++, match);
+		}
+
+		res->Set(Nan::New("rules").ToLocalChecked(), matches);
+
+		Local<Value> argv[2];
 		argv[0] = Nan::Null();
-		callback->Call(1, argv);
+		argv[1] = res;
+		callback->Call(2, argv);
 	}
 
 private:
 	ScannerWrap* scanner_;
+	ScanReq* scan_req_;
 };
+
+int scanCallback(int message, void* data, void* param) {
+	AsyncScan* async_scan = (AsyncScan*) param;
+
+	YR_RULE* rule;
+	YR_META* meta;
+	const char* tag;
+	ScanRuleMatch* rule_match;
+
+	switch (message) {
+		case CALLBACK_MSG_RULE_MATCHING:
+			rule = (YR_RULE*) data;
+			rule_match = new ScanRuleMatch();
+
+			rule_match->name = rule->identifier;
+
+			yr_rule_tags_foreach(rule, tag) {
+				rule_match->tags.push_back(std::string(tag));
+			}
+
+			yr_rule_metas_foreach(rule, meta) {
+				std::ostringstream oss;
+				oss << meta->type << ":" << meta->identifier << ":";
+
+				if (meta->type == META_TYPE_INTEGER)
+					oss << meta->integer;
+				else if (meta->type == META_TYPE_BOOLEAN)
+					oss << (meta->integer ? "true" : "false");
+				else
+					oss << meta->string;
+
+				rule_match->metas.push_back(oss.str());
+			}
+
+			async_scan->rule_matches.push_back(rule_match);
+
+			break;
+
+		case CALLBACK_MSG_RULE_NOT_MATCHING:
+			break;
+
+		case CALLBACK_MSG_SCAN_FINISHED:
+			break;
+
+		case CALLBACK_MSG_IMPORT_MODULE:
+			break;
+
+		case CALLBACK_MSG_MODULE_IMPORTED:
+			break;
+
+		default:
+			break;
+	};
+
+	return CALLBACK_CONTINUE;
+}
 
 NAN_METHOD(ScannerWrap::Scan) {
 	Nan::HandleScope scope;
@@ -702,7 +876,94 @@ NAN_METHOD(ScannerWrap::Scan) {
 		return;
 	}
 
-	//Local<Object> req = info[0]->ToObject();
+	Local<Object> req = info[0]->ToObject();
+
+	const char* filename = NULL;
+	char* buffer = NULL;
+	int64_t offset = 0;
+	int64_t length = 0;
+	int32_t flags = 0;
+	int32_t timeout = 0;
+
+	if (req->Get(Nan::New("filename").ToLocalChecked())->IsString()) {
+		Local<String> s = req->Get(Nan::New("filename").ToLocalChecked())->ToString();
+		filename = *Nan::Utf8String(s);
+	} else if (req->Get(Nan::New("buffer").ToLocalChecked())->IsObject()) {
+		Local<Object> o = req->Get(Nan::New("buffer").ToLocalChecked())->ToObject();
+		buffer = node::Buffer::Data(o);
+
+		if (req->Get(Nan::New("offset").ToLocalChecked())->IsNumber()) {
+			Local<Number> n = Nan::To<Number>(req->Get(Nan::New("offset").ToLocalChecked())).ToLocalChecked();
+
+			if (n->Value() < 0) {
+				Nan::ThrowError("Offset is out of bounds");
+				return;
+			} else if (n->Value() > node::Buffer::Length(o)) {
+				Nan::ThrowError("Offset is out of bounds");
+				return;
+			} else {
+				offset = n->Value();
+			}
+		} else {
+			offset = 0;
+		}
+
+		if (req->Get(Nan::New("length").ToLocalChecked())->IsNumber()) {
+			Local<Number> n = Nan::To<Number>(req->Get(Nan::New("length").ToLocalChecked())).ToLocalChecked();
+
+			if (n->Value() < 0) {
+				Nan::ThrowError("Length is out of bounds");
+				return;
+			} else if (n->Value() > node::Buffer::Length(o)) {
+				Nan::ThrowError("Length is out of bounds");
+				return;
+			} else {
+				length = n->Value();
+			}
+		} else {
+			length = node::Buffer::Length(o);
+		}
+
+		if (req->Get(Nan::New("flags").ToLocalChecked())->IsInt32()) {
+			Local<Int32> n = Nan::To<Int32>(req->Get(Nan::New("flags").ToLocalChecked())).ToLocalChecked();
+
+			if (n->Value() < 0) {
+				Nan::ThrowError("Flags cannot be negative");
+				return;
+			} else {
+				flags = n->Value();
+			}
+		} else {
+			flags = 0;
+		}
+
+		if (req->Get(Nan::New("timeout").ToLocalChecked())->IsInt32()) {
+			Local<Int32> n = Nan::To<Int32>(req->Get(Nan::New("timeout").ToLocalChecked())).ToLocalChecked();
+
+			if (n->Value() < 0) {
+				Nan::ThrowError("Timeout cannot be negative");
+				return;
+			} else {
+				timeout = n->Value();
+			}
+		} else {
+			timeout = 0;
+		}
+	}
+
+	if ((! filename) && (! buffer)) {
+		Nan::ThrowError("Either filename of buffer is required");
+		return;
+	}
+
+	ScanReq* scan_req = new ScanReq();
+
+	scan_req->filename = filename;
+	scan_req->buffer = buffer;
+	scan_req->offset = offset;
+	scan_req->length = length;
+	scan_req->flags = flags;
+	scan_req->timeout = timeout;
 
 	Nan::Callback* callback = new Nan::Callback(info[1].As<Function>());
 
@@ -710,6 +971,7 @@ NAN_METHOD(ScannerWrap::Scan) {
 
 	AsyncScan* async_scan = new AsyncScan(
 			scanner,
+			scan_req,
 			callback
 		);
 

@@ -200,7 +200,7 @@ describe("index.js", function() {
 					]
 				}, function(error) {
 					assert(error instanceof Error)
-					assert.equal(error.message, "unknown variable type: 0")
+					assert.equal(error.message, "Unknown variable type: 0")
 					done()
 				})
 		})
@@ -212,20 +212,46 @@ describe("index.js", function() {
 
 			scanner.configure({
 					rules: [
-						{string: "rule is_stephen {\ncondition:\n\"stephen\"\n}"},
-						{string: "rule is_silvia {\ncondition:\n\"silvia\"\n}"},
-						{string: "rule is_either {\ncondition:\n\"stephen\" or \"silvia\"\n}"}
+						{string: "import \"pe\"\n"},
+						{string: "import \"elf\"\n"},
+						{string: "rule is_stephen : human man {\nmeta:\nm1 = \"m1\"\nm2 = true\nm3 = 123\n\nstrings:\n$s1 = \"stephen\"\ncondition:\n(age == 35) and (any of them)\n}"},
+						{string: "rule is_silvia : human womman{\nstrings:\n$s1 = \"silvia\"\ncondition:\nany of them\n}"},
+						{string: "rule is_either : human man woman {\nstrings:\n$s1 = \"stephen\"\n$s2 = \"silvia\"\ncondition:\nany of them\n}"},
+					],
+					variables: [
+						{type: yara.VariableType.Integer, id: "age", value: 35}
 					]
 				}, function(error) {
 					assert.ifError(error)
 
 					var req = {
-						uuid: 1,
 						buffer: Buffer.from("my name is stephen")
 					}
 
 					scanner.scan(req, function(error, result) {
 						assert.ifError(error)
+
+						var expected = {
+							"rules": [
+								{
+									"name": "is_stephen",
+									"tags": ["human", "man"],
+									"metas": [
+										{"type": "2", "identifier": "m1", "value": "m1"},
+										{"type": "3", "identifier": "m2", "value": "true"},
+										{"type": "1", "identifier": "m3", "value": 123}
+									]
+								},
+								{
+									"name": "is_either",
+									"tags": ["human", "man", "woman"],
+									"metas": []
+								}
+							]
+						}
+
+						assert.deepEqual(result, expected)
+
 						done()
 					})
 				})
