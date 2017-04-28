@@ -61,7 +61,7 @@ be created, and content scanned using YARA rules:
 						console.error(error.message)
 					}
 				} else {
-					if (warnings)
+					if (warnings.length)
 						console.error("Compile warnings: " + JSON.stringify(warnings))
 					} else {
 						var req = {buffer: Buffer.from("content")}
@@ -92,7 +92,7 @@ When working with the YARA C API one would typically perform the following:
  3. Compile one or more rules
  4. Define zero or more external variables
  5. Retrieve the compiled rules
- 6 Scan one or more pieces of content (file or memory based) using the
+ 6. Scan one or more pieces of content (file or memory based) using the
    compiled rules
 
 Node.js is asynchronous and this module takes advantage of this property by
@@ -218,9 +218,9 @@ given):
 # Using This Module
 
 This module exposes the `Scanner` class.  Instances of this class are used to
-configure one or more YARA rules, external variables (referred to as simply
-"variables" throughout this document).  Once configured with these items,
-`Scanner` instances are then used to scan content using the `scan()` method.
+configure one or more YARA rules and zero or more external variables.  Once
+configured with these items, `Scanner` instances are then used to scan content
+using the `scan()` method.
 
 This module exports the `createScanner()` function which is used to create
 instances of the `Scanner` class.
@@ -259,18 +259,18 @@ This function takes no arguments.
 
 ## scanner.configure(options, callback)
 
-The `configure()` method configures the scanner with one or more YARA rules
-and zero or more YARA external variables.
+The `configure()` method configures a `Scanner` instance with one or more YARA
+rules and zero or more YARA external variables.
 
 The required `options` parameter is an object, and can contain the following
 items:
 
- * `rules` - An array of objects, each defining one YARA rule, each object can
-   contain one of the following two attributes:
+ * `rules` - An array of objects, each defining one YARA rule, each object
+   must contain one of the following two attributes:
     * `filename` - A file containing YARA rules to configure the scanner with
     * `string` - A string containin YARA rules to configure the scanner with
- * `variables` - An array of objects, each defining one YARA rule, each object
-   must contain the following attributes:
+ * `variables` - An array of objects, each defining one YARA external variable,
+   each object must contain the following attributes:
     * `type` - One of the constants defined in the `yara.VariableType` object,
       e.g. `yara.VariableType.Integer`
     * `id` - The variables identifier as a string, e.g. `created_at`
@@ -279,14 +279,14 @@ items:
       `yara.VariableType.Boolean`
 
 The `callback` function is called once all rules have been compiled and all
-variables have been configured.  The following arguments will be passed to the
-`callback` function:
+external variables have been configured.  The following arguments will be
+passed to the `callback` function:
 
  * `error` - Instance of the `Error` class, an instance of the
    `yara.CompileRulesError` class, or `null` if no error occurred, if `error`
    is an instance of the `yara.CompileRulesError` class then the attribute
-   `errors` will be defined on the `error` object, is is an array of one or
-   more objectsm each object defines an error generated when a rule was
+   `errors` will be defined on the `error` object which is an array of one or
+   more objects, each object defines an error generated when a rule was
    compiled, each object will contain the following attributes:
     * `index` - An integer index indicating which item in the `rules` array,
       specified in the `options` object passed to the `configure()` method,
@@ -301,9 +301,9 @@ variables have been configured.  The following arguments will be passed to the
    attributes:
     * `index` - An integer index indicating which item in the `rules` array,
       specified in the `options` object passed to the `configure()` method,
-      the warning relates to, i.e. `0` for the first item
+      the warning relates to, i.e. `3` for the fourth item
     * `line` - The line number within the rule the warning relates to, e.g.
-      `42` for line 42
+      `12` for line 12
     * `message` - A string describing the warning, e.g.
       `Using literal string "stephen" in a boolean operation.`
 
@@ -314,13 +314,13 @@ The following example configures a number of YARA rules from strings:
 		"rule always_false {\ncondition:\nfalse\n}"
 	]
 
-	var vars = [
+	var variables = [
 		{type: yara.VariableType.Integer, id: "created_at", value: 1493332105},
 		{type: yara.VariableType.String, id: "created_by", value: "Stephen Vickers"},
 		{type: yara.VariableType.Boolean, id: "is_stable", value: true}
 	]
 	
-	scanner.configure({rules: rules, variables: vars}, function(error, warnings) {
+	scanner.configure({rules: rules, variables: variables}, function(error, warnings) {
 		if (error) {
 			if (error instanceof CompileRulesError) {
 				console.error(error.message + ": " + JSON.stringify(error.errors))
@@ -328,7 +328,7 @@ The following example configures a number of YARA rules from strings:
 				console.error(error.message)
 			}
 		} else {
-			if (warnings)
+			if (warnings.length)
 				console.error("Compile warnings: " + JSON.stringify(warnings))
 			} else {
 				// Scan some files
@@ -338,7 +338,7 @@ The following example configures a number of YARA rules from strings:
 
 ## scanner.scan(request, callback)
 
-The `scan()` method scans the bytes contained within a Node.js `Buffer` object
+The `scan()` method scans the content contained within a Node.js `Buffer` object
 or a file.
 
 The required `request` parameter is an object, and can contain the following
@@ -380,7 +380,7 @@ arguments will be passed to the `callback` function:
           * `id` - The strings identifier, e.g. `$s1`
        * `metas` - An array of objects, each identifying a meta field defined
          on the rule, since a rule may have no meta fields this array may have
-         a length of `0`:
+         a length of `0`, each object will contain the following attributes:
           * `type` - One of the constants defined in the `yara.MetaType`
             object, e.g. `yara.MetaType.Integer`
           * `id` - The meta fields identifier, e.g. `created_by`
