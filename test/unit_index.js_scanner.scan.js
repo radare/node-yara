@@ -42,22 +42,22 @@ describe("index.js", function() {
 				var expected = {
 					"rules": [
 						{
-							"name": "is_stephen",
+							"id": "is_stephen",
 							"tags": ["human", "man"],
 							"matches": [
-								{offset: 11, length: 7, identifier: "$s1"}
+								{offset: 11, length: 7, id: "$s1"}
 							],
 							"metas": [
-								{"type": "2", "identifier": "m1", "value": "m1"},
-								{"type": "3", "identifier": "m2", "value": true},
-								{"type": "1", "identifier": "m3", "value": 123}
+								{type: 2, id: "m1", value: "m1"},
+								{type: 3, id: "m2", value: true},
+								{type: 1, id: "m3", value: 123}
 							]
 						},
 						{
-							"name": "is_either",
+							"id": "is_either",
 							"tags": ["human", "man", "woman"],
 							"matches": [
-								{offset: 11, length: 7, identifier: "$s1"}
+								{offset: 11, length: 7, id: "$s1"}
 							],
 							"metas": []
 						}
@@ -227,22 +227,22 @@ describe("index.js", function() {
 				var expected = {
 					"rules": [
 						{
-							"name": "is_stephen",
+							"id": "is_stephen",
 							"tags": ["human", "man"],
 							"matches": [
-								{offset: 20, length: 7, identifier: "$s1"}
+								{offset: 20, length: 7, id: "$s1"}
 							],
 							"metas": [
-								{"type": "2", "identifier": "m1", "value": "m1"},
-								{"type": "3", "identifier": "m2", "value": true},
-								{"type": "1", "identifier": "m3", "value": 123}
+								{type: 2, id: "m1", value: "m1"},
+								{type: 3, id: "m2", value: true},
+								{type: 1, id: "m3", value: 123}
 							]
 						},
 						{
-							"name": "is_either",
+							"id": "is_either",
 							"tags": ["human", "man", "woman"],
 							"matches": [
-								{offset: 20, length: 7, identifier: "$s1"}
+								{offset: 20, length: 7, id: "$s1"}
 							],
 							"metas": []
 						}
@@ -273,11 +273,11 @@ describe("index.js", function() {
 						var expected = {
 							"rules": [
 								{
-									"name": "is_stephen",
+									"id": "is_stephen",
 									"tags": [],
 									"matches": [
-										{offset: 0, length: 7, identifier: "$s1"},
-										{offset: 8, length: 7, identifier: "$s1"}
+										{offset: 0, length: 7, id: "$s1"},
+										{offset: 8, length: 7, id: "$s1"}
 									],
 									"metas": []
 								}
@@ -310,10 +310,10 @@ describe("index.js", function() {
 						var expected = {
 							"rules": [
 								{
-									"name": "is_stephen",
+									"id": "is_stephen",
 									"tags": [],
 									"matches": [
-										{offset: 0, length: 7, identifier: "$s1"}
+										{offset: 0, length: 7, id: "$s1"}
 									],
 									"metas": []
 								}

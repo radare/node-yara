@@ -181,24 +181,6 @@ protected:
 	}
 };
 
-NAN_METHOD(ErrorCodeToString) {
-	Nan::HandleScope scope;
-
-	if (info.Length() < 1) {
-		Nan::ThrowError("One argument is required");
-		return;
-	}
-
-	if (! info[0]->IsInt32()) {
-		Nan::ThrowError("Code argument must be a int32");
-		return;
-	}
-
-	int code = Nan::To<v8::Int32>(info[0]).ToLocalChecked()->Value();
-
-	info.GetReturnValue().Set(Nan::New<String>(getErrorString(code)).ToLocalChecked());
-}
-
 NAN_METHOD(Initialize) {
 	Nan::HandleScope scope;
 
@@ -683,7 +665,7 @@ struct ScanReq {
 };
 
 struct ScanRuleMatch {
-	std::string name;
+	std::string id;
 	std::list<std::string> tags;
 	std::list<std::string> metas;
 	std::list<std::string> matches;
@@ -803,7 +785,7 @@ protected:
 				matches->Set(matches_index++, match);
 			}
 
-			rule->Set(Nan::New("name").ToLocalChecked(), Nan::New(rule_match->name.c_str()).ToLocalChecked());
+			rule->Set(Nan::New("id").ToLocalChecked(), Nan::New(rule_match->id.c_str()).ToLocalChecked());
 			rule->Set(Nan::New("tags").ToLocalChecked(), tags);
 			rule->Set(Nan::New("metas").ToLocalChecked(), metas);
 			rule->Set(Nan::New("matches").ToLocalChecked(), matches);
@@ -839,7 +821,7 @@ int scanCallback(int message, void* data, void* param) {
 			rule = (YR_RULE*) data;
 			rule_match = new ScanRuleMatch();
 
-			rule_match->name = rule->identifier;
+			rule_match->id = rule->identifier;
 
 			yr_rule_tags_foreach(rule, tag) {
 				rule_match->tags.push_back(std::string(tag));

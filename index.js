@@ -77,8 +77,8 @@ Scanner.prototype.scan = function(req, cb) {
 					var fields = rule.metas[i].split(":")
 
 					var meta = {
-						type: fields[0],
-						identifier: fields[1],
+						type: parseInt(fields[0]),
+						id: fields[1],
 						value: fields[2]
 					}
 
@@ -96,7 +96,7 @@ Scanner.prototype.scan = function(req, cb) {
 					var match = {
 						offset: parseInt(fields[0]),
 						length: parseInt(fields[1]),
-						identifier: fields[2]
+						id: fields[2]
 					}
 
 					rule.matches[i] = match

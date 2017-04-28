@@ -3,9 +3,7 @@ BASE=$(shell pwd)
 
 YARA=3.5.0
 
-libyara:
-
-all: yara
+libyara: yara
 
 yara:
 	-rm -rf $(BASE)/deps/yara-$(YARA)
