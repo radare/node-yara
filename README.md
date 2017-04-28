@@ -6,8 +6,19 @@
 # Example
 
 	##
-	## Linux only (for now), and builds software using node-gyp.
+	## Install node-gyp and all its dependancies.
 	##
+	## CentOS/Red Hat:
+	##
+	##    yum install file-devel
+	##
+	## Debian/Ubuntu
+	##
+	##    apt-get install libmagic-dev
+	##
+	## Other platforms are not currently supported.
+	##
+	
 	npm install yara
 
 	var yara = require("yara")

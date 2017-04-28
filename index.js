@@ -24,7 +24,18 @@ function Scanner(options) {
 }
 
 Scanner.prototype.configure = function(options, cb) {
-	return this.yara.configure(options, function(error) {
+	return this.yara.configure(options, function(error, warnings) {
+		if (warnings) {
+			for (var i = 0; i < warnings.length; i++) {
+				var fields = warnings[i].split(":")
+				warnings[i] = {
+					index: parseInt(fields[0]),
+					line: parseInt(fields[1]),
+					message: fields[2]
+				}
+			}
+		}
+
 		if (error) {
 			if (error.errors) {
 				var errors = []
@@ -41,9 +52,10 @@ Scanner.prototype.configure = function(options, cb) {
 				error = new CompileRulesError(error.message)
 				error.errors = errors
 			}
-			cb(error)
+
+			cb(error, warnings)
 		} else {
-			cb()
+			cb(null, warnings)
 		}
 	})
 }
@@ -53,7 +65,7 @@ Scanner.prototype.scan = function(req, cb) {
 		if (! req.offset)
 			req.offset = 0
 		if (! req.length)
-			req.length = req.buffer.length
+			req.length = req.buffer.length - req.offset
 	}
 
 	return this.yara.scan(req, function(error, result) {
@@ -72,10 +84,22 @@ Scanner.prototype.scan = function(req, cb) {
 
 					if (meta.type == yara.MetaType.Integer)
 						meta.value = parseInt(meta.value)
-					else if (meta.type == yara.MetaType.Integer)
-						meta.value = parseInt(meta.value) ? true : false
+					else if (meta.type == yara.MetaType.Boolean)
+						meta.value = (meta.value == "true") ? true : false
 
 					rule.metas[i] = meta
+				}
+
+				for (var i = 0; i < rule.matches.length; i++) {
+					var fields = rule.matches[i].split(":")
+
+					var match = {
+						offset: parseInt(fields[0]),
+						length: parseInt(fields[1]),
+						identifier: fields[2]
+					}
+
+					rule.matches[i] = match
 				}
 			})
 

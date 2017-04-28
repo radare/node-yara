@@ -139,7 +139,7 @@ void ExportConstants(Handle<Object> target) {
 
 	Nan::Set(target, Nan::New("ScanFlag").ToLocalChecked(), scan_flag);
 
-	Nan::Set(variable_type, Nan::New("FastMode").ToLocalChecked(), Nan::New<Number>(SCAN_FLAGS_FAST_MODE));
+	Nan::Set(scan_flag, Nan::New("FastMode").ToLocalChecked(), Nan::New<Number>(SCAN_FLAGS_FAST_MODE));
 
 	Local<Object> meta_type = Nan::New<Object>();
 
@@ -485,6 +485,17 @@ public:
 protected:
 
 	void HandleOKCallback() {
+		Local<Array> warnings_array = Nan::New<Array>();
+		uint32_t warnings_index = 0;
+
+		std::list<std::string>::iterator warnings_it = warnings.begin();
+
+		while (warnings_it != warnings.end()) {
+			Nan::MaybeLocal<String> str = Nan::New<String>((*warnings_it).c_str());
+			warnings_array->Set(warnings_index++, str.ToLocalChecked());
+			warnings_it++;
+		}
+
 		if (error_count > 0) {
 			Local<Object> error = Nan::To<Object>(Nan::Error("Error compiling rules")).ToLocalChecked();
 
@@ -501,13 +512,15 @@ protected:
 
 			error->Set(Nan::New<String>("errors").ToLocalChecked(), errors_array);
 
-			Local<Value> argv[1];
+			Local<Value> argv[2];
 			argv[0] = error;
-			callback->Call(1, argv);
+			argv[1] = warnings_array;
+			callback->Call(2, argv);
 		} else {
-			Local<Value> argv[1];
+			Local<Value> argv[2];
 			argv[0] = Nan::Null();
-			callback->Call(1, argv);
+			argv[1] = warnings_array;
+			callback->Call(2, argv);
 		}
 	}
 
@@ -673,6 +686,7 @@ struct ScanRuleMatch {
 	std::string name;
 	std::list<std::string> tags;
 	std::list<std::string> metas;
+	std::list<std::string> matches;
 };
 
 typedef std::list<ScanRuleMatch*> ScanRuleMatchList;
@@ -705,9 +719,6 @@ public:
 		scanner_->lock_read();
 
 		try {
-			if (! scanner_->rules)
-				yara_throw(YaraError, "Scanner has not been configured");
-
 			int rc;
 
 			if (scan_req_->filename.length()) {
@@ -752,15 +763,15 @@ protected:
 
 		Local<Object> res = Nan::New<Object>();
 
-		Local<Array> matches = Nan::New<Array>();
-		int matches_index = 0;
+		Local<Array> rules = Nan::New<Array>();
+		int rules_index = 0;
 
 		for (ScanRuleMatchList::iterator rule_matches_it = rule_matches.begin();
 				rule_matches_it != rule_matches.end();
 				rule_matches_it++) {
 			ScanRuleMatch* rule_match = *rule_matches_it;
 
-			Local<Object> match = Nan::New<Object>();
+			Local<Object> rule = Nan::New<Object>();
 
 			Local<Array> tags = Nan::New<Array>();
 			int tags_index = 0;
@@ -782,14 +793,25 @@ protected:
 				metas->Set(metas_index++, meta);
 			}
 
-			match->Set(Nan::New("name").ToLocalChecked(), Nan::New(rule_match->name.c_str()).ToLocalChecked());
-			match->Set(Nan::New("tags").ToLocalChecked(), tags);
-			match->Set(Nan::New("metas").ToLocalChecked(), metas);
+			Local<Array> matches = Nan::New<Array>();
+			int matches_index = 0;
 
-			matches->Set(matches_index++, match);
+			for (std::list<std::string>::iterator matches_it = rule_match->matches.begin();
+					matches_it != rule_match->matches.end();
+					matches_it++) {
+				Local<String> match = Nan::New((*matches_it).c_str()).ToLocalChecked();
+				matches->Set(matches_index++, match);
+			}
+
+			rule->Set(Nan::New("name").ToLocalChecked(), Nan::New(rule_match->name.c_str()).ToLocalChecked());
+			rule->Set(Nan::New("tags").ToLocalChecked(), tags);
+			rule->Set(Nan::New("metas").ToLocalChecked(), metas);
+			rule->Set(Nan::New("matches").ToLocalChecked(), matches);
+
+			rules->Set(rules_index++, rule);
 		}
 
-		res->Set(Nan::New("rules").ToLocalChecked(), matches);
+		res->Set(Nan::New("rules").ToLocalChecked(), rules);
 
 		Local<Value> argv[2];
 		argv[0] = Nan::Null();
@@ -807,6 +829,8 @@ int scanCallback(int message, void* data, void* param) {
 
 	YR_RULE* rule;
 	YR_META* meta;
+	YR_STRING* string;
+	YR_MATCH* match;
 	const char* tag;
 	ScanRuleMatch* rule_match;
 
@@ -833,6 +857,15 @@ int scanCallback(int message, void* data, void* param) {
 					oss << meta->string;
 
 				rule_match->metas.push_back(oss.str());
+			}
+
+			yr_rule_strings_foreach(rule, string) {
+				yr_string_matches_foreach(string, match) {
+					std::ostringstream oss;
+					oss << match->offset << ":" << match->match_length << ":" << string->identifier;
+
+					rule_match->matches.push_back(oss.str());
+				}
 			}
 
 			async_scan->rule_matches.push_back(rule_match);
@@ -876,10 +909,17 @@ NAN_METHOD(ScannerWrap::Scan) {
 		return;
 	}
 
+	ScannerWrap* scanner = ScannerWrap::Unwrap<ScannerWrap>(info.This());
+
+	if (! scanner->rules) {
+		Nan::ThrowError("Please call configure() before scan()");
+		return;
+	}
+
 	Local<Object> req = info[0]->ToObject();
 
-	const char* filename = NULL;
-	char* buffer = NULL;
+	char* filename = NULL;
+	char *buffer = NULL;
 	int64_t offset = 0;
 	int64_t length = 0;
 	int32_t flags = 0;
@@ -898,7 +938,7 @@ NAN_METHOD(ScannerWrap::Scan) {
 			if (n->Value() < 0) {
 				Nan::ThrowError("Offset is out of bounds");
 				return;
-			} else if (n->Value() > node::Buffer::Length(o)) {
+			} else if (n->Value() >= node::Buffer::Length(o)) {
 				Nan::ThrowError("Offset is out of bounds");
 				return;
 			} else {
@@ -911,17 +951,17 @@ NAN_METHOD(ScannerWrap::Scan) {
 		if (req->Get(Nan::New("length").ToLocalChecked())->IsNumber()) {
 			Local<Number> n = Nan::To<Number>(req->Get(Nan::New("length").ToLocalChecked())).ToLocalChecked();
 
-			if (n->Value() < 0) {
+			if (n->Value() <= 0) {
 				Nan::ThrowError("Length is out of bounds");
 				return;
-			} else if (n->Value() > node::Buffer::Length(o)) {
+			} else if ((n->Value() + offset) > node::Buffer::Length(o)) {
 				Nan::ThrowError("Length is out of bounds");
 				return;
 			} else {
 				length = n->Value();
 			}
 		} else {
-			length = node::Buffer::Length(o);
+			length = node::Buffer::Length(o) - offset;
 		}
 
 		if (req->Get(Nan::New("flags").ToLocalChecked())->IsInt32()) {
@@ -958,7 +998,9 @@ NAN_METHOD(ScannerWrap::Scan) {
 
 	ScanReq* scan_req = new ScanReq();
 
-	scan_req->filename = filename;
+	if (filename)
+		scan_req->filename = filename;
+
 	scan_req->buffer = buffer;
 	scan_req->offset = offset;
 	scan_req->length = length;
@@ -966,8 +1008,6 @@ NAN_METHOD(ScannerWrap::Scan) {
 	scan_req->timeout = timeout;
 
 	Nan::Callback* callback = new Nan::Callback(info[1].As<Function>());
-
-	ScannerWrap* scanner = ScannerWrap::Unwrap<ScannerWrap>(info.This());
 
 	AsyncScan* async_scan = new AsyncScan(
 			scanner,

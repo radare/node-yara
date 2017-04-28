@@ -17,13 +17,16 @@ var files = fs.readdirSync(dir);
 
 function doOne(file) {
 	path = dir + "/" + file
+
 	console.log("scanning: %s", path)
 
 	scanner.scan({filename: path}, function(path, error, result) {
 		if (error) {
 			console.error("scan %s failed: %s", path, error.message)
 		} else {
-			console.error("scan %s done: %s", path, JSON.stringify(result))
+			if (result.rules.length) {
+				console.log("matched %s: %s", path, JSON.stringify(result))
+			}
 		}
 	}.bind(this, path))
 }
