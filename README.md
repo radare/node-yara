@@ -3,9 +3,11 @@
 
 This module implements [YARA][yara] bindings for [Node.js][nodejs].
 
-This module requires the `libmagic` library, and the `libcrypto` library
-provided by OpenSSL, and their associated C header files.  Use the following
-commands to install these libraries depending on platform beforeinstallation:
+**This module is currently supported on Linux platforms only**
+
+This module requires the `libmagic` library and the `libcrypto` library, and
+their associated C header files.  Use the following commands to install these
+libraries before installation:
 
 	# CentOS/Red Hat
 	
@@ -15,12 +17,10 @@ commands to install these libraries depending on platform beforeinstallation:
 	
 	sudo apt-get install libmagic-dev
 
-The `libyara` library source is included with this package, which will be
+The `libyara` library source is included with this package and will be
 compiled using `make` and associated tools during installation.
 
 This module is installed using [node package manager (npm)][npm]:
-
-**This module is currently supported on Linux platforms only**
 
 	# This module contains C++ source code which will be compiled
 	# during installation using node-gyp.  A suitable build chain
@@ -89,27 +89,30 @@ When working with the YARA C API one would typically perform the following:
 
  1. Initialize the YARA library
  2. Create a YARA compiler
- 3. Compiler one rule at a time
+ 3. Compile one or more rules
  4. Define zero or more external variables
  5. Retrieve the compiled rules
  6 Scan one or more pieces of content (file or memory based) using the
    compiled rules
 
 Node.js is asynchronous and this module takes advantage of this property by
-performing steps 2 to 5 above as a single action.  Thisdone in a way that YARA
-rules can be completely replaced at run-time while in the middle of scanning
-files.
+performing steps 2 to 5 above as a single action.  This is done in a way that
+YARA rules can be completely replaced at run-time while in the middle of
+scanning files.
 
 This can be useful for long-running processes which must reload rules on the
 fly in the middle of scanning large numbers of files, for example.
 
-For this module, the following steps should be used:
+When using this module in place of the YARA C API the following steps would
+be used instead:
 
  1. Initialize the YARA library - call `yara.initialize()`
  2. Create a scanner instance - call `yara.createScanner()`
  3. Configure the scanner instance - call `Scanner.configure()`
  4. Scan one or more pieces of content (file or memory based) - call
     `Scanner.scan()`
+ 5. At any point, even while scanning files, re-configure the scanner instance
+    with new rules and external variables - call `Scanner.configure()`
 
 Nearly all features of the YARA C API are exposed by this module.  Features
 that do not fit in with the Node.js environment are excluded, e.g. the
@@ -121,7 +124,7 @@ exposed in anyway, nor are the `yr_rules_save_stream()` and
 
 # Asynchronous Thread Pool Size
 
-Scans of content are performed in background threads.  This is provided by the
+Content scanning is performed in background threads.  This is provided by the
 [Native Abstractions for Node.js][nan] framework, specifically the
 `AsyncWorker` class interface.
 
@@ -129,7 +132,8 @@ By default, Node.js employs 4 background threads by default.  When scanning
 many hundreds of files at once, for example, this would reduce throughput.
 Support for the `UV_THREADPOOL_SIZE` environment variable was introduced into
 Node.js 0.10.0.  This can be used increase the number of background threads up
-to a maximum of 128, e.g., before starting node:
+to a maximum of 128.  This should be set before starting Node.js, and cannot
+be changed once Node.js has been started:
 
 	export UV_THREADPOOL_SIZE=128; node
 
@@ -147,6 +151,20 @@ array of objects each defining a matched rule.  Each rule object will have a
 `metas` attribute, which is a further array of objects, each defining the
 meta fields defined for the corresponding rule.  Each meta object contains
 a `type` attribute which defines the YARA type for the meta field's value.
+For example:
+
+	var result = {
+		"rules": [
+			{
+				"id": "is_stephen",
+				...
+				"metas": [
+					{type: yara.MetaType.String, id: "m1", value: "something"},
+					{type: yara.MetaType.Boolean, id: "m2", value: true}
+				]
+			}
+		]
+	}
 
 This object contains constants which can be used for the `type` attribute.
 
@@ -157,7 +175,7 @@ API constant is also given):
  * `Boolean` - `META_TYPE_BOOLEAN`
  * `String` - `META_TYPE_STRING`
 
-# yara.ScanFlag
+## yara.ScanFlag
 
 The `Scanner.scan()` method expects an object as its first argument.  This
 object can contain a `flags` attribute which is used by the YARA scanning
@@ -170,12 +188,21 @@ API constant is also given):
 
  * `FastMode` - `SCAN_FLAGS_FAST_MODE`
 
-# yara.VariableType
+## yara.VariableType
 
 The `Scanner.scan()` method expects an object as its first argument.  This
 object can contain a `variables` attribute, which is an array of objects,
 each defining a YARA external variable.  Each variable object contains
 a `type` attribute which defines the YARA type for the variables value.
+For example:
+
+	var options = {
+		...
+		variables: [
+			{type: yara.VariableType.Integer, id: "age", value: 35}
+			{type: yara.VariableType.String, id: "name", value: "Stephen Vickers"}
+		]
+	}
 
 This object contains constants which can be used for the `type` attribute.
 
