@@ -14,10 +14,16 @@
 		  './deps/yara-3.5.0/build/include'
       ],
 		'libraries': [
-			'-lmagic',
+                '-lmagic',
          '../deps/yara-3.5.0/build/lib/libyara.a'
 		],
-      'conditions' : [],
+      'conditions' : [
+        ["OS=='mac'", {
+          "xcode_settings": {
+            'GCC_ENABLE_CPP_EXCEPTIONS': 'YES'
+          }
+        }]
+      ],
       'actions': [
         {
           'action_name': 'build_libyara',
