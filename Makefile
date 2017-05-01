@@ -7,6 +7,7 @@ CFGOPTS+=--disable-magic
 CFLAGS+=-I/usr/local/include/node
 LDFLAGS+=-L/usr/lib
 else
+CFGOPTS+=--with-crypto
 CFGOPTS+=--enable-magic
 endif
 
@@ -23,7 +24,6 @@ yara:
 		LDFLAGS="$(LDFLAGS)" \
 		./configure \
 			$(YARA_CFGOPTS) \
-			--with-crypto \
 			--enable-static \
 			--disable-shared \
 			--with-pic \
