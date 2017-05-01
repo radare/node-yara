@@ -5,6 +5,7 @@ OSNAME=$(shell uname)
 ifeq ($(OSNAME),Darwin)
 CFGOPTS+=--disable-magic
 CFLAGS+=-I/usr/local/include/node
+LDFLAGS+=-L/usr/lib
 else
 CFGOPTS+=--enable-magic
 endif
@@ -17,7 +18,10 @@ yara:
 	-rm -rf $(BASE)/deps/yara-$(YARA)
 	cd $(BASE)/deps && tar -xzvf yara-$(YARA).tar.gz
 	cd $(BASE)/deps/yara-$(YARA) && ./bootstrap.sh
-	cd $(BASE)/deps/yara-$(YARA) && CFLAGS="$(CFLAGS)" ./configure \
+	cd $(BASE)/deps/yara-$(YARA) && \
+		CFLAGS="$(CFLAGS)" \
+		LDFLAGS="$(LDFLAGS)" \
+		./configure \
 			$(YARA_CFGOPTS) \
 			--with-crypto \
 			--enable-static \
